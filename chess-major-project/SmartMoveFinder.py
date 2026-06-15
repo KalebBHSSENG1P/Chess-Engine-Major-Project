@@ -108,7 +108,7 @@ class ChessAI:
             alpha = -cls.CHECKMATE
             beta = cls.CHECKMATE
             ordered_moves = sorted(valid_moves, key=cls._move_order_key, reverse=True)
-            best_move_at_depth = None
+            best_moves_at_depth = []
             best_score = -cls.CHECKMATE
             for move in ordered_moves:
                 if cls.stop_search:
@@ -128,15 +128,20 @@ class ChessAI:
                     break
                 if score > best_score:
                     best_score = score
-                    best_move_at_depth = move
+                    best_moves_at_depth = [move]
+                elif score == best_score:
+                    best_moves_at_depth.append(move)
                 if score > alpha:
                     alpha = score
                 if alpha >= beta:
                     break
             if cls.stop_search:
                 break
-            if best_move_at_depth is not None:
-                best_move = best_move_at_depth
+            if best_moves_at_depth:
+                best_move = max(
+                    best_moves_at_depth,
+                    key=lambda move: (cls._move_quality(move), cls._move_order_key(move)),
+                )
         return best_move if best_move is not None else (valid_moves[0] if valid_moves else None)
 
     @classmethod
@@ -146,6 +151,27 @@ class ChessAI:
         promotion_bonus = 100 if move.isPawnPromotion else 0
         capture_bonus = victim_value * 10 - attacker_value
         return capture_bonus + promotion_bonus
+
+    @classmethod
+    def _move_quality(cls, move):
+        quality = 0.0
+        center_distance = abs(move.endRow - 3.5) + abs(move.endCol - 3.5)
+        quality += max(0.0, 4.0 - center_distance) * 0.1
+        if move.pieceMoved.kind == "N":
+            if move.endCol in (0, 7) or move.endRow in (0, 7):
+                quality -= 0.5
+            else:
+                quality += 0.1
+        elif move.pieceMoved.kind == "B":
+            if move.endRow not in (0, 7):
+                quality += 0.05
+        elif move.pieceMoved.kind == "p":
+            quality += max(0.0, 0.4 - abs(move.endCol - 3.5) * 0.05)
+        if move.isCastleMove:
+            quality += 0.5
+        if move.pieceMoved.kind == "Q":
+            quality -= 0.05
+        return quality
 
     @classmethod
     def _position_key(cls, gs):
@@ -248,7 +274,7 @@ class ChessAI:
         return alpha
 
     @classmethod
-    def score_board(cls, gs):
+    def score_board(cls, gs, valid_moves=None):
         if gs.checkmate:
             return -cls.CHECKMATE if gs.whiteToMove else cls.CHECKMATE
         if gs.stalemate:
@@ -268,4 +294,18 @@ class ChessAI:
                     score += piece_score
                 else:
                     score -= piece_score
+
+        white_center_squares = {(3, 3), (3, 4), (4, 3), (4, 4)}
+        for row, col in white_center_squares:
+            square = gs.board[row, col]
+            if square is not None:
+                score += 0.1 if square.color == "w" else -0.1
+
+        if valid_moves is None:
+            valid_moves = gs.getValidMoves()
+        mobility_score = 0.05 * len(valid_moves)
+        if not gs.whiteToMove:
+            mobility_score = -mobility_score
+        score += mobility_score
+
         return score
