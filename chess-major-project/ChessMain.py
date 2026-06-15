@@ -5,8 +5,7 @@ and connecting the chess engine with the AI.
 
 import os
 import pygame as p
-from multiprocessing import Process, Queue
-from queue import Empty
+from concurrent.futures import ProcessPoolExecutor
 
 from ChessEngine import GameState, Move
 from SmartMoveFinder import ChessAI
@@ -30,6 +29,8 @@ class ChessApp:
         self.move_log_font = p.font.SysFont("Arial", 20, False, False)
         self.images = {}
         self.load_images()
+        self.ai_executor = ProcessPoolExecutor(max_workers=1)
+        self.ai_future = None
         self.reset_game()
 
     def reset_game(self):
@@ -43,8 +44,7 @@ class ChessApp:
         self.player_one = True
         self.player_two = False
         self.ai_thinking = False
-        self.move_finder_process = None
-        self.return_queue = None
+        self.ai_future = None
         self.move_undone = False
 
     def load_images(self):
@@ -145,26 +145,23 @@ class ChessApp:
             return
         if not self.ai_thinking:
             self.ai_thinking = True
-            print("[ChessApp] AI thinking started")
-            self.return_queue = Queue()
-            self.move_finder_process = Process(
-                target=ChessAI.find_best_move_minmax,
-                args=(self.gs, self.valid_moves, self.return_queue),
+            self.ai_future = self.ai_executor.submit(
+                ChessAI.find_best_move_minmax,
+                self.gs,
+                self.valid_moves,
             )
-            self.move_finder_process.start()
-        if self.return_queue is not None and not self.move_finder_process.is_alive():
+        if self.ai_future is not None and self.ai_future.done():
             try:
-                ai_move = self.return_queue.get_nowait()
-            except Empty:
+                ai_move = self.ai_future.result()
+            except Exception:
                 ai_move = None
             if ai_move is None:
-                print("[ChessApp] AI failed to return a move, choosing random fallback")
                 ai_move = ChessAI.find_random_move(self.valid_moves)
-            print(f"[ChessApp] AI selected move: {ai_move}")
             self.gs.makeMove(ai_move)
             self.move_made = True
             self.animate = True
             self.ai_thinking = False
+            self.ai_future = None
 
     def update_after_move(self):
         if self.animate and self.gs.moveLog:
