@@ -221,8 +221,11 @@ def drawBoard(screen):
 def highlightSquares(screen, gs, validMoves, sqSelected):
     if sqSelected != ():
         r, c = sqSelected
+        selected_piece = gs.board[r, c]
         # make sure that each user can use highlighting ability for its own pieces
-        if gs.board[r][c][0] == ("w" if gs.whiteToMove else "b"):
+        if selected_piece is not None and selected_piece.color == (
+            "w" if gs.whiteToMove else "b"
+        ):
             # 1. highlight the selected square
             s = p.Surface((SQ_SIZE, SQ_SIZE))
             s.set_alpha(
@@ -242,10 +245,10 @@ def highlightSquares(screen, gs, validMoves, sqSelected):
 def drawPieces(screen, board):
     for r in range(DIMENSION):
         for c in range(DIMENSION):
-            piece = board[r][c]
-            if piece != "--":  # it's really a piece and not an empty square
+            piece = board[r, c]
+            if piece is not None:  # it's really a piece and not an empty square
                 screen.blit(
-                    IMAGES[piece], p.Rect(c * SQ_SIZE, r * SQ_SIZE, SQ_SIZE, SQ_SIZE)
+                    IMAGES[piece.code], p.Rect(c * SQ_SIZE, r * SQ_SIZE, SQ_SIZE, SQ_SIZE)
                 )
 
 
@@ -272,20 +275,20 @@ def animateMove(move, screen, board, clock):
         )
         p.draw.rect(screen, color, endSquare)
         # draw the captured piece back onto the top of the rect
-        if move.pieceCaptured != "--":
+        if move.pieceCaptured is not None:
             if move.isEnpassantMove:
                 enpassantRow = (
                     (move.endRow + 1)
-                    if move.pieceCaptured[0] == "b"
+                    if move.pieceCaptured.color == "b"
                     else (move.endRow - 1)
                 )
                 endSquare = p.Rect(
                     move.endCol * SQ_SIZE, enpassantRow * SQ_SIZE, SQ_SIZE, SQ_SIZE
                 )
-            screen.blit(IMAGES[move.pieceCaptured], endSquare)
+            screen.blit(IMAGES[move.pieceCaptured.code], endSquare)
         # draw the moving piece
         screen.blit(
-            IMAGES[move.pieceMoved], p.Rect(c * SQ_SIZE, r * SQ_SIZE, SQ_SIZE, SQ_SIZE)
+            IMAGES[move.pieceMoved.code], p.Rect(c * SQ_SIZE, r * SQ_SIZE, SQ_SIZE, SQ_SIZE)
         )
         p.display.flip()
         clock.tick(120)

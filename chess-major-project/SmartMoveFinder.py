@@ -112,7 +112,6 @@ def findBestMoveMinMax(gs, validMoves, returnQueue):
         gs, validMoves, MAX_DEPTH, -CHECKMATE, CHECKMATE, 1 if gs.whiteToMove else -1
     )
     returnQueue.put(nextMove)
-    print(returnQueue.get())
 
 
 """
@@ -167,17 +166,15 @@ def scoreBoard(gs):
     score = 0
     for row in range(len(gs.board)):
         for col in range(len(gs.board[row])):
-            square = gs.board[row][col]
-            if square != "--":
+            square = gs.board[row, col]
+            if square is not None:
                 pps = 0
                 fac = 0.1
-                color = square[0]
-                piece = square[1]
+                color = square.color
+                piece = square.kind
                 if piece != "K":
-                    pps += (
-                        piecePositionScores[piece if piece != "p" else square][row][col]
-                        * fac
-                    )
+                    position_key = square.code if piece == "p" else piece
+                    pps += piecePositionScores[position_key][row][col] * fac
                 if color == "w":
                     score += pieceScore[piece] + pps
                 elif color == "b":
