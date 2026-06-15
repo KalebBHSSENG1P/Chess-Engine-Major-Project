@@ -1,182 +1,141 @@
-import random
+﻿import random
 
-# assign the king any value which means you can't really lose
-# your king as it would be a checkmate before that happened
-pieceScore = {"K": 0, "Q": 10, "R": 5, "B": 3, "N": 3, "p": 1}
+class ChessAI:
+    pieceScore = {"K": 0, "Q": 10, "R": 5, "B": 3, "N": 3, "p": 1}
 
-# this is just a way to give some squares some prefrence than other when moving the each piece
-knightScores = [
-    [1, 1, 1, 1, 1, 1, 1, 1],
-    [1, 2, 2, 2, 2, 2, 2, 1],
-    [1, 2, 3, 3, 3, 3, 2, 1],
-    [1, 2, 3, 4, 4, 3, 2, 1],
-    [1, 2, 3, 4, 4, 3, 2, 1],
-    [1, 2, 3, 3, 3, 3, 2, 1],
-    [1, 2, 2, 2, 2, 2, 2, 1],
-    [1, 1, 1, 1, 1, 1, 1, 1],
-]
+    knightScores = [
+        [1, 1, 1, 1, 1, 1, 1, 1],
+        [1, 2, 2, 2, 2, 2, 2, 1],
+        [1, 2, 3, 3, 3, 3, 2, 1],
+        [1, 2, 3, 4, 4, 3, 2, 1],
+        [1, 2, 3, 4, 4, 3, 2, 1],
+        [1, 2, 3, 3, 3, 3, 2, 1],
+        [1, 2, 2, 2, 2, 2, 2, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1],
+    ]
 
-bishopScores = [
-    [4, 3, 2, 1, 1, 2, 3, 4],
-    [3, 4, 3, 2, 2, 3, 4, 3],
-    [2, 3, 4, 3, 3, 4, 3, 2],
-    [1, 2, 3, 4, 4, 3, 2, 1],
-    [1, 2, 3, 4, 4, 3, 2, 1],
-    [2, 3, 4, 3, 3, 4, 3, 2],
-    [3, 4, 3, 2, 2, 3, 4, 3],
-    [4, 3, 2, 1, 1, 2, 3, 4],
-]
+    bishopScores = [
+        [4, 3, 2, 1, 1, 2, 3, 4],
+        [3, 4, 3, 2, 2, 3, 4, 3],
+        [2, 3, 4, 3, 3, 4, 3, 2],
+        [1, 2, 3, 4, 4, 3, 2, 1],
+        [1, 2, 3, 4, 4, 3, 2, 1],
+        [2, 3, 4, 3, 3, 4, 3, 2],
+        [3, 4, 3, 2, 2, 3, 4, 3],
+        [4, 3, 2, 1, 1, 2, 3, 4],
+    ]
 
-queenScores = [
-    [1, 1, 1, 3, 1, 1, 1, 1],
-    [1, 2, 3, 3, 3, 1, 1, 1],
-    [1, 4, 3, 3, 3, 4, 2, 1],
-    [1, 2, 3, 3, 3, 2, 2, 1],
-    [1, 2, 3, 3, 3, 2, 2, 1],
-    [1, 4, 3, 3, 3, 4, 2, 1],
-    [1, 1, 2, 3, 3, 1, 1, 1],
-    [1, 1, 1, 3, 1, 1, 1, 1],
-]
+    queenScores = [
+        [1, 1, 1, 3, 1, 1, 1, 1],
+        [1, 2, 3, 3, 3, 1, 1, 1],
+        [1, 4, 3, 3, 3, 4, 2, 1],
+        [1, 2, 3, 3, 3, 2, 2, 1],
+        [1, 2, 3, 3, 3, 2, 2, 1],
+        [1, 4, 3, 3, 3, 4, 2, 1],
+        [1, 1, 2, 3, 3, 1, 1, 1],
+        [1, 1, 1, 3, 1, 1, 1, 1],
+    ]
 
-rockScores = [
-    [4, 3, 4, 4, 4, 4, 3, 4],
-    [4, 4, 4, 4, 4, 4, 4, 4],
-    [1, 1, 2, 3, 3, 2, 1, 1],
-    [1, 2, 3, 4, 4, 3, 2, 1],
-    [1, 2, 3, 4, 4, 3, 2, 1],
-    [1, 1, 2, 3, 3, 2, 1, 1],
-    [4, 4, 4, 4, 4, 4, 4, 4],
-    [4, 3, 4, 4, 4, 4, 3, 4],
-]
+    rookScores = [
+        [4, 3, 4, 4, 4, 4, 3, 4],
+        [4, 4, 4, 4, 4, 4, 4, 4],
+        [1, 1, 2, 3, 3, 2, 1, 1],
+        [1, 2, 3, 4, 4, 3, 2, 1],
+        [1, 2, 3, 4, 4, 3, 2, 1],
+        [1, 1, 2, 3, 3, 2, 1, 1],
+        [4, 4, 4, 4, 4, 4, 4, 4],
+        [4, 3, 4, 4, 4, 4, 3, 4],
+    ]
 
-whitePawnScores = [
-    [8, 8, 8, 8, 8, 8, 8, 8],
-    [8, 8, 8, 8, 8, 8, 8, 8],
-    [5, 6, 6, 7, 7, 6, 6, 5],
-    [2, 3, 3, 5, 5, 3, 3, 2],
-    [1, 2, 3, 4, 4, 3, 2, 1],
-    [1, 1, 2, 3, 3, 2, 1, 1],
-    [1, 1, 1, 0, 0, 1, 1, 1],
-    [0, 0, 0, 0, 0, 0, 0, 0],
-]
+    whitePawnScores = [
+        [8, 8, 8, 8, 8, 8, 8, 8],
+        [8, 8, 8, 8, 8, 8, 8, 8],
+        [5, 6, 6, 7, 7, 6, 6, 5],
+        [2, 3, 3, 5, 5, 3, 3, 2],
+        [1, 2, 3, 4, 4, 3, 2, 1],
+        [1, 1, 2, 3, 3, 2, 1, 1],
+        [1, 1, 1, 0, 0, 1, 1, 1],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+    ]
 
-blackPawnScores = [
-    [0, 0, 0, 0, 0, 0, 0, 0],
-    [1, 1, 1, 0, 0, 1, 1, 1],
-    [1, 1, 2, 3, 3, 2, 1, 1],
-    [1, 2, 3, 4, 4, 3, 2, 1],
-    [2, 3, 3, 5, 5, 3, 3, 2],
-    [5, 6, 6, 7, 7, 6, 6, 5],
-    [8, 8, 8, 8, 8, 8, 8, 8],
-    [8, 8, 8, 8, 8, 8, 8, 8],
-]
+    blackPawnScores = [
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [1, 1, 1, 0, 0, 1, 1, 1],
+        [1, 1, 2, 3, 3, 2, 1, 1],
+        [1, 2, 3, 4, 4, 3, 2, 1],
+        [2, 3, 3, 5, 5, 3, 3, 2],
+        [5, 6, 6, 7, 7, 6, 6, 5],
+        [8, 8, 8, 8, 8, 8, 8, 8],
+        [8, 8, 8, 8, 8, 8, 8, 8],
+    ]
 
-# map eaching of the pieces to the appropriate 2d array
-piecePositionScores = {
-    "N": knightScores,
-    "B": bishopScores,
-    "Q": queenScores,
-    "R": rockScores,
-    "bp": blackPawnScores,
-    "wp": whitePawnScores,
-}
+    piecePositionScores = {
+        "N": knightScores,
+        "B": bishopScores,
+        "Q": queenScores,
+        "R": rookScores,
+        "bp": blackPawnScores,
+        "wp": whitePawnScores,
+    }
 
-CHECKMATE = 1000
-STALEMATE = 0
-# represents how many moves the computer should look ahead
-# before deciding on its best move
-MAX_DEPTH = 3
-nextMove = None
+    CHECKMATE = 1000
+    STALEMATE = 0
+    MAX_DEPTH = 3
 
+    @staticmethod
+    def find_random_move(valid_moves):
+        return random.choice(valid_moves)
 
-"""
-this is created first to just test the AI moving the pieces
-so it wouldn't really so much important to get those moves correct yet
-"""
-
-
-def findRandomMoves(validMoves):
-    return validMoves[random.randint(0, len(validMoves) - 1)]
-
-
-"""
-this is a helper method to make the first calls
-for the actual algorithm
-"""
-
-
-def findBestMoveMinMax(gs, validMoves, returnQueue):
-    global nextMove
-    nextMove = None
-    findMoveNegaMaxAlphaBeta(
-        gs, validMoves, MAX_DEPTH, -CHECKMATE, CHECKMATE, 1 if gs.whiteToMove else -1
-    )
-    returnQueue.put(nextMove)
-
-
-"""
-implementing the nega-max algorithm
-"""
-
-
-def findMoveNegaMaxAlphaBeta(gs, validMoves, depth, alpha, beta, turnMultiplier):
-    global nextMove
-    if depth == 0:
-        return turnMultiplier * scoreBoard(gs)
-    # move ordering - could improve the algorithm a little bit
-    # random.shuffle(validMoves)
-    maxScore = -CHECKMATE
-    for move in validMoves:
-        gs.makeMove(move)
-        nextMoves = gs.getValidMoves()
-        score = -findMoveNegaMaxAlphaBeta(
-            gs, nextMoves, depth - 1, -beta, -alpha, -turnMultiplier
+    @classmethod
+    def find_best_move_minmax(cls, gs, valid_moves, return_queue):
+        print(f"[ChessAI] Starting search depth={cls.MAX_DEPTH} color={'white' if gs.whiteToMove else 'black'} valid_moves={len(valid_moves)}")
+        cls.next_move = None
+        cls._find_move_negamax_alphabeta(
+            gs, valid_moves, cls.MAX_DEPTH, -cls.CHECKMATE, cls.CHECKMATE, 1 if gs.whiteToMove else -1
         )
-        if score > maxScore:
-            maxScore = score
-            if depth == MAX_DEPTH:
-                nextMove = move
-                print(move, score)
-        gs.undoMove()
-        if maxScore > alpha:  # where the prunning happens
-            alpha = maxScore
-        if alpha >= beta:
-            break
-    return maxScore
+        print(f"[ChessAI] Best move: {cls.next_move}")
+        return_queue.put(cls.next_move)
 
+    @classmethod
+    def _find_move_negamax_alphabeta(cls, gs, valid_moves, depth, alpha, beta, turn_multiplier):
+        if depth == 0:
+            return turn_multiplier * cls.score_board(gs)
 
-"""
-a little bit more instructive score board method instead of
-the naive solution that's implemented in scoreMaterial()
-notes:
- 1. postive score is good for white and negative score is good for black
-"""
+        max_score = -cls.CHECKMATE
+        for move in valid_moves:
+            gs.makeMove(move)
+            next_moves = gs.getValidMoves()
+            score = -cls._find_move_negamax_alphabeta(
+                gs, next_moves, depth - 1, -beta, -alpha, -turn_multiplier
+            )
+            if score > max_score:
+                max_score = score
+                if depth == cls.MAX_DEPTH:
+                    cls.next_move = move
+            gs.undoMove()
+            if max_score > alpha:
+                alpha = max_score
+            if alpha >= beta:
+                break
+        return max_score
 
+    @classmethod
+    def score_board(cls, gs):
+        if gs.checkmate:
+            return -cls.CHECKMATE if gs.whiteToMove else cls.CHECKMATE
+        if gs.stalemate:
+            return cls.STALEMATE
 
-def scoreBoard(gs):
-    # checking for those two basic cases here instead of doing
-    # that in the findMoveMinMax()
-    if gs.checkmate:
-        if gs.whiteToMove:
-            return -CHECKMATE  # black wins
-        else:
-            return CHECKMATE  # white wins
-    elif gs.stalemate:
-        return STALEMATE
-    score = 0
-    for row in range(len(gs.board)):
-        for col in range(len(gs.board[row])):
-            square = gs.board[row, col]
-            if square is not None:
-                pps = 0
-                fac = 0.1
-                color = square.color
-                piece = square.kind
-                if piece != "K":
-                    position_key = square.code if piece == "p" else piece
-                    pps += piecePositionScores[position_key][row][col] * fac
-                if color == "w":
-                    score += pieceScore[piece] + pps
-                elif color == "b":
-                    score -= pieceScore[piece] + pps
-    return score
+        score = 0
+        for row in range(len(gs.board)):
+            for col in range(len(gs.board[row])):
+                square = gs.board[row, col]
+                if square is None:
+                    continue
+                position_key = square.code if square.kind == "p" else square.kind
+                pps = cls.piecePositionScores[position_key][row][col] * 0.1 if square.kind != "K" else 0
+                if square.color == "w":
+                    score += cls.pieceScore[square.kind] + pps
+                else:
+                    score -= cls.pieceScore[square.kind] + pps
+        return score
