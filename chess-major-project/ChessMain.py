@@ -93,10 +93,15 @@ class ChessApp:
             self.sq_selected = ()
             self.player_clicks = []
             return
+        current_color = "w" if self.gs.whiteToMove else "b"
         if self.sq_selected == (row, col):
             self.sq_selected = ()
             self.player_clicks = []
         else:
+            if len(self.player_clicks) == 0:
+                selected_piece = self.gs.board[row, col]
+                if selected_piece is None or selected_piece.color != current_color:
+                    return
             self.sq_selected = (row, col)
             self.player_clicks.append(self.sq_selected)
         if len(self.player_clicks) == 2 and self.human_turn():
