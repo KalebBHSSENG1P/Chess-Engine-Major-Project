@@ -94,11 +94,37 @@ class ChessAI:
         "wp": whitePawnScores,
     }
 
+    # Opening book: common opening moves and responses for early game variation
+    # Maps move sequences (as algebraic notation) to list of recommended response moves
+    opening_book = {
+        # White first moves: popular main openings
+        "": ["e4", "d4", "c4", "Nf3"],  # 1.e4, 1.d4, 1.c4, 1.Nf3
+        
+        # White 1.e4 responses: Italian Game, French Defense, Sicilian
+        "e4": ["c5", "e5", "c6"],  # Sicilian, Open game, Caro-Kann
+        "e4|c5": ["Nf3", "c4"],  # Sicilian main lines
+        "e4|e5": ["Nf3", "f4"],  # Open game, King's Gambit
+        "e4|c6": ["d4", "Nf3"],  # Caro-Kann main lines
+        
+        # White 1.d4 responses: Queen's Gambit, Semi-Slav, Nf6
+        "d4": ["Nf6", "d5", "c6"],  # Nf6, QGD, Semi-Slav
+        "d4|Nf6": ["c4", "Bg5"],  # Reti, London
+        "d4|d5": ["c4", "Nf3"],  # QGD, London
+        "d4|c6": ["Nf3", "c4"],  # Semi-Slav, Slav
+        
+        # White 1.c4 responses: English Opening
+        "c4": ["e5", "c6", "Nf6"],  # English variations
+        "c4|e5": ["Nc3", "g3"],  # Symmetrical English
+        
+        # White 1.Nf3 responses: Reti Opening
+        "Nf3": ["d5", "c5", "Nf6"],  # Reti lines
+    }
+
     # Search parameters and engine constants
     CHECKMATE = 1000  # Maximum score (one side has won)
     STALEMATE = 0  # No advantage (draw)
-    MAX_DEPTH = 4  # Maximum search depth
-    TIME_LIMIT = 0.6  # Time limit for move search (seconds)
+    MAX_DEPTH = 8  # Maximum search depth
+    TIME_LIMIT = 1.2  # Time limit for move search (seconds)
     
     # Optimization caches: transposition table stores evaluated positions
     killer_moves = {}  # Killer move heuristic for move ordering
@@ -112,11 +138,43 @@ class ChessAI:
         return random.choice(valid_moves)
 
     @classmethod
+    def _get_opening_book_move(cls, gs, valid_moves):
+        """
+        Check opening book for current position and return random book move if available.
+        Uses move log to track opening sequence in algebraic notation.
+        """
+        # Only use book in opening phase (first 8 moves total = 4 for each side)
+        if len(gs.moveLog) >= 8:
+            return None
+        
+        # Build position key from move log in algebraic notation
+        move_sequence = "|".join(str(move) for move in gs.moveLog)
+        
+        # Look up position in opening book
+        if move_sequence in cls.opening_book:
+            book_moves = cls.opening_book[move_sequence]
+            # Filter book moves to only those that are legal in current position
+            legal_book_moves = []
+            for move in valid_moves:
+                if str(move) in book_moves:
+                    legal_book_moves.append(move)
+            # Return random legal book move if any exist
+            if legal_book_moves:
+                return random.choice(legal_book_moves)
+        
+        return None
+
+    @classmethod
     def find_best_move_minmax(cls, gs, valid_moves):
         """
         Find best move using iterative deepening with alpha-beta pruning.
         Returns deepest completed move; retains previous if time limit exceeded.
         """
+        # Check opening book for first 8 moves (early game variation)
+        book_move = cls._get_opening_book_move(gs, valid_moves)
+        if book_move is not None:
+            return book_move
+        
         cls.transposition_table = {}
         cls.killer_moves = {}
         cls.stop_search = False
@@ -192,7 +250,7 @@ class ChessAI:
     def _move_quality(cls, move, gs):
         """
         Tiebreaker heuristic when multiple moves evaluate equally.
-        Prioritizes: captures > defending pieces > special moves > piece development.
+        Prioritizes: capturing undefended pieces > check blocking > piece safety > avoiding undefended moves > special moves > piece development.
         """
         quality = 0.0
         
@@ -201,31 +259,147 @@ class ChessAI:
             captured_value = cls.pieceScore.get(move.pieceCaptured.kind, 0)
             attacker_value = cls.pieceScore.get(move.pieceMoved.kind, 0)
             
-            # Award higher bonus for capturing valuable pieces
-            if move.pieceCaptured.kind == "Q":
-                quality += 10.0
-            elif move.pieceCaptured.kind == "R":
-                quality += 5.0
-            elif move.pieceCaptured.kind in ("B", "N"):
-                quality += 3.2
-            elif move.pieceCaptured.kind == "p":
-                quality += 1.0
+            # Check if captured piece is defended (protected by opponent)
+            gs.makeMove(move)
+            captured_piece_defended = gs.squareUnderAttack(move.endRow, move.endCol)
+            gs.undoMove()
             
-            # Bonus if winning material, penalty if losing material
-            if captured_value > attacker_value:
-                quality += 1.0
-            elif captured_value < attacker_value * 0.5:
-                quality -= 0.5
+            if not captured_piece_defended:
+                # Undefended piece capture: always good (winning material)
+                if move.pieceCaptured.kind == "Q":
+                    quality += 10.0
+                elif move.pieceCaptured.kind == "R":
+                    quality += 5.0
+                elif move.pieceCaptured.kind in ("B", "N"):
+                    quality += 3.2
+                elif move.pieceCaptured.kind == "p":
+                    quality += 1.0
+                quality += 0.5  # Bonus for capturing undefended piece
+            else:
+                # Defended piece capture: evaluate the trade
+                # Only apply bonuses if we're winning material in the exchange
+                if captured_value > attacker_value:
+                    # We're winning material
+                    if move.pieceCaptured.kind == "Q":
+                        quality += 10.0
+                    elif move.pieceCaptured.kind == "R":
+                        quality += 5.0
+                    elif move.pieceCaptured.kind in ("B", "N"):
+                        quality += 3.2
+                    elif move.pieceCaptured.kind == "p":
+                        quality += 1.0
+                    quality += 0.5  # Bonus for winning trade
+                else:
+                    # We're losing material or even trade: heavy penalty
+                    material_loss = attacker_value - captured_value
+                    quality -= 5.0 + material_loss * 0.3
+            
+            # Extra bonus for capturing a piece that was attacking our pieces
+            # Find which of our pieces are currently under attack
+            our_color = "w" if gs.whiteToMove else "b"
+            attacked_our_pieces = 0
+            for r in range(8):
+                for c in range(8):
+                    piece = gs.board[r, c]
+                    if piece is not None and piece.color == our_color:
+                        if gs.squareUnderAttack(r, c):
+                            attacked_our_pieces += 1
+            
+            # Make the move and see how many of our pieces are still under attack
+            gs.makeMove(move)
+            still_attacked = 0
+            for r in range(8):
+                for c in range(8):
+                    piece = gs.board[r, c]
+                    if piece is not None and piece.color == our_color:
+                        if gs.squareUnderAttack(r, c):
+                            still_attacked += 1
+            gs.undoMove()
+            
+            # Bonus for removing threats (pieces that are no longer under attack)
+            threats_removed = attacked_our_pieces - still_attacked
+            if threats_removed > 0:
+                quality += threats_removed * 0.8
+        
+        # Check blocking preference: prefer blocking check with non-king pieces over moving king
+        if move.pieceMoved.kind != "K":
+            king_was_in_check = gs.inCheck()
+            if king_was_in_check:
+                gs.makeMove(move)
+                king_still_in_check = gs.inCheck()
+                gs.undoMove()
+                # Strong bonus for blocking check without moving king
+                if not king_still_in_check:
+                    quality += 2.5
+        
+        # Piece safety: dynamic bonus for moving any piece under attack to safety
+        # Bonus scales with piece value: queen gets biggest bonus, pawns smallest
+        if not move.isCapture:
+            piece_under_attack = gs.squareUnderAttack(move.startRow, move.startCol)
+            if piece_under_attack:
+                # Check if piece is still under attack after the move
+                gs.makeMove(move)
+                piece_still_under_attack = gs.squareUnderAttack(move.endRow, move.endCol)
+                gs.undoMove()
+                # If piece evades capture, give dynamic bonus based on piece value
+                if not piece_still_under_attack:
+                    piece_value = cls.pieceScore.get(move.pieceMoved.kind, 0)
+                    # Queen: 10 -> +1.0, Rook: 5 -> +0.5, Bishop/Knight: 3-3.25 -> +0.3-0.32, Pawn: 1 -> +0.1
+                    quality += piece_value * 0.15
+        
+        # CRITICAL: Heavy penalty for moving piece to a square under attack (non-free square)
+        # Extra severe penalty for pieces captured by pawns (bad trades)
+        if not move.isCapture and move.pieceMoved.kind != "K":
+            gs.makeMove(move)
+            dest_under_attack = gs.squareUnderAttack(move.endRow, move.endCol)
+            gs.undoMove()
+            if dest_under_attack:
+                # Check specifically if a pawn can capture this piece
+                enemy_color = "b" if gs.whiteToMove else "w"
+                piece_value = cls.pieceScore.get(move.pieceMoved.kind, 0)
+                pawn_can_capture = False
+                
+                # Check diagonal squares for enemy pawns that can capture
+                pawn_attack_direction = -1 if enemy_color == "b" else 1
+                for delta_col in (-1, 1):
+                    pawn_row = move.endRow - pawn_attack_direction
+                    pawn_col = move.endCol + delta_col
+                    if 0 <= pawn_row < 8 and 0 <= pawn_col < 8:
+                        pawn = gs.board[pawn_row, pawn_col]
+                        if pawn is not None and pawn.kind == "p" and pawn.color == enemy_color:
+                            pawn_can_capture = True
+                            break
+                
+                # Much heavier penalty for pieces captured by pawns (bad trades)
+                if pawn_can_capture:
+                    quality -= 30 + piece_value * 1.0
+                else:
+                    # Very heavy penalty for moving to any attacked square (non-free square)
+                    quality -= 15 + piece_value * 0.4
         
         # Second priority: move pieces under attack to safety
         if not move.isCapture and gs.squareUnderAttack(move.startRow, move.startCol):
-            quality += 1.5
+            # Higher bonus for moving queen to safety (already handled above) 
+            if move.pieceMoved.kind != "Q":
+                quality += 1.5
         
         # Special moves: promotion and castling
         if move.isPawnPromotion:
             quality += 2.0
         if move.isCastleMove:
-            quality += 1.0
+            quality += 1.2
+        
+        # Slight penalty for checking opponent's king (very minor disincentive)
+        gs.makeMove(move)
+        if gs.inCheck():
+            quality -= 0.03
+        gs.undoMove()
+        
+        # Special moves: promotion and castling
+        if move.isPawnPromotion:
+            quality += 2.0
+        if move.isCastleMove:
+            quality += 1.2
         
         # Piece development: only evaluate if no tactical moves available
         if quality == 0.0:
@@ -243,6 +417,9 @@ class ChessAI:
                     quality += 0.08
                 else:
                     quality += 0.01
+            # King: heavy penalty for moving (preserves castling rights)
+            elif move.pieceMoved.kind == "K":
+                quality -= 0.20
             # Rook: slight penalty for moving from corner (conserve for castling)
             elif move.pieceMoved.kind == "R":
                 if move.startRow in (7, 0) and move.startCol in (0, 7):

@@ -153,6 +153,13 @@ class ChessApp:
 
     def try_player_move(self):
         """Validate player's move against legal moves and execute if valid."""
+        # Validate that starting square still has a piece (board may have changed)
+        start_piece = self.gs.board[self.player_clicks[0][0], self.player_clicks[0][1]]
+        if start_piece is None:
+            # Starting square is now empty: reset and abort
+            self.sq_selected = ()
+            self.player_clicks = []
+            return
         # Create move object from click coordinates
         move = Move(self.player_clicks[0], self.player_clicks[1], self.gs.board)
         # Check if move matches any legal move
@@ -208,9 +215,16 @@ class ChessApp:
                 ai_move = self.ai_future.result()
             except Exception:
                 ai_move = None
-            # Fallback to random move if AI failed
+            # Fallback to random move if AI failed, but only if moves are available
             if ai_move is None:
-                ai_move = ChessAI.find_random_move(self.valid_moves)
+                if len(self.valid_moves) > 0:
+                    ai_move = ChessAI.find_random_move(self.valid_moves)
+                else:
+                    # No valid moves: game is checkmate or stalemate
+                    self.game_over = True
+                    self.ai_thinking = False
+                    self.ai_future = None
+                    return
             # Execute AI move on board
             self.gs.makeMove(ai_move)
             self.move_made = True  # Trigger board update
