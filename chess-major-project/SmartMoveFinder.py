@@ -140,7 +140,7 @@ class ChessAI:
             if best_moves_at_depth:
                 best_move = max(
                     best_moves_at_depth,
-                    key=lambda move: (cls._move_quality(move), cls._move_order_key(move)),
+                    key=lambda move: (cls._move_quality(move, gs), cls._move_order_key(move)),
                 )
         return best_move if best_move is not None else (valid_moves[0] if valid_moves else None)
 
@@ -153,24 +153,94 @@ class ChessAI:
         return capture_bonus + promotion_bonus
 
     @classmethod
-    def _move_quality(cls, move):
+    def _move_quality(cls, move, gs):
         quality = 0.0
-        center_distance = abs(move.endRow - 3.5) + abs(move.endCol - 3.5)
-        quality += max(0.0, 4.0 - center_distance) * 0.1
-        if move.pieceMoved.kind == "N":
-            if move.endCol in (0, 7) or move.endRow in (0, 7):
+        
+        # Highest priority: captures
+        if move.isCapture:
+            captured_value = cls.pieceScore.get(move.pieceCaptured.kind, 0)
+            attacker_value = cls.pieceScore.get(move.pieceMoved.kind, 0)
+            
+            # Prioritize capturing high-value pieces
+            if move.pieceCaptured.kind == "Q":
+                quality += 10.0
+            elif move.pieceCaptured.kind == "R":
+                quality += 5.0
+            elif move.pieceCaptured.kind in ("B", "N"):
+                quality += 3.2
+            elif move.pieceCaptured.kind == "p":
+                quality += 1.0
+            
+            # Bonus if winning material (capturing more valuable piece)
+            if captured_value > attacker_value:
+                quality += 1.0
+            # Penalty if losing material (attacking less valuable piece with more valuable piece)
+            elif captured_value < attacker_value * 0.5:
                 quality -= 0.5
-            else:
-                quality += 0.1
-        elif move.pieceMoved.kind == "B":
-            if move.endRow not in (0, 7):
-                quality += 0.05
-        elif move.pieceMoved.kind == "p":
-            quality += max(0.0, 0.4 - abs(move.endCol - 3.5) * 0.05)
+        
+        # Second priority: moving pieces under attack to safety
+        if not move.isCapture and gs.squareUnderAttack(move.startRow, move.startCol):
+            quality += 1.5
+        
+        # Pawn promotion
+        if move.isPawnPromotion:
+            quality += 2.0
+        
+        # Castling
         if move.isCastleMove:
-            quality += 0.5
-        if move.pieceMoved.kind == "Q":
-            quality -= 0.05
+            quality += 1.0
+        
+        # Piece development (only if not doing something tactical)
+        if quality == 0.0:  # No tactical moves (no captures, no moving attacked pieces)
+            if move.pieceMoved.kind == "N":
+                if move.startRow in (7, 0):
+                    quality += 0.10
+                if move.endCol in (0, 7) or move.endRow in (0, 7):
+                    quality -= 0.15
+                else:
+                    quality += 0.05
+            elif move.pieceMoved.kind == "B":
+                if move.startRow in (7, 0):
+                    quality += 0.08
+                else:
+                    quality += 0.01
+            elif move.pieceMoved.kind == "R":
+                if move.startRow in (7, 0) and move.startCol in (0, 7):
+                    quality -= 0.05
+            elif move.pieceMoved.kind == "Q":
+                quality -= 0.08
+            elif move.pieceMoved.kind == "p":
+                is_white = move.pieceMoved.color == "w"
+                forward_row = move.endRow if is_white else (7 - move.endRow)
+                is_center = move.endCol in (3, 4)
+                is_center_adjacent = move.endCol in (2, 5)
+                
+                if forward_row <= 2:
+                    quality -= 0.25
+                elif forward_row == 3:
+                    if is_center:
+                        quality += 0.22
+                    elif is_center_adjacent:
+                        quality += 0.14
+                    else:
+                        quality -= 0.05
+                elif forward_row == 4:
+                    if is_center:
+                        quality += 0.18
+                    elif is_center_adjacent:
+                        quality += 0.10
+                    else:
+                        quality -= 0.02
+                else:
+                    if is_center or is_center_adjacent:
+                        quality += 0.05
+                    else:
+                        quality -= 0.10
+            
+            center_distance = abs(move.endRow - 3.5) + abs(move.endCol - 3.5)
+            if move.pieceMoved.kind != "p":
+                quality += max(0.0, 3.0 - center_distance) * 0.01
+        
         return quality
 
     @classmethod
