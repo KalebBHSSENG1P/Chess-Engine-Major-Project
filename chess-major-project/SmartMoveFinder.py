@@ -1,10 +1,18 @@
-﻿import random
+﻿"""
+Chess AI engine implementing negamax with alpha-beta pruning.
+Features: iterative deepening, transposition table, killer moves, quiescence search.
+"""
+import random
 import time
 import numpy as np
 
+
 class ChessAI:
+    # Piece values (in pawns): used for material counting and move evaluation
     pieceScore = {"K": 1000, "Q": 10, "R": 5, "B": 3.25, "N": 3, "p": 1}
 
+    # Piece-square tables: position bonus/penalty for each piece type on each square
+    # Higher values = more desirable positions (e.g., knights in center > knights on edges)
     knightScores = np.array([
         [1, 1, 1, 1, 1, 1, 1, 1],
         [1, 2, 2, 2, 2, 2, 2, 1],
@@ -16,6 +24,7 @@ class ChessAI:
         [1, 1, 1, 1, 1, 1, 1, 1],
     ], dtype=int)
 
+    # Bishop position bonuses: favors long diagonals and center
     bishopScores = np.array([
         [4, 3, 2, 1, 1, 2, 3, 4],
         [3, 4, 3, 2, 2, 3, 4, 3],
@@ -27,6 +36,7 @@ class ChessAI:
         [4, 3, 2, 1, 1, 2, 3, 4],
     ], dtype=int)
 
+    # Queen position bonuses: prefers center with slight bias toward back rank
     queenScores = np.array([
         [1, 1, 1, 3, 1, 1, 1, 1],
         [1, 2, 3, 3, 3, 1, 1, 1],
@@ -38,6 +48,7 @@ class ChessAI:
         [1, 1, 1, 3, 1, 1, 1, 1],
     ], dtype=int)
 
+    # Rook position bonuses: favors open files and back rank
     rookScores = np.array([
         [4, 3, 4, 4, 4, 4, 3, 4],
         [4, 4, 4, 4, 4, 4, 4, 4],
@@ -49,6 +60,7 @@ class ChessAI:
         [4, 3, 4, 4, 4, 4, 3, 4],
     ], dtype=int)
 
+    # White pawn position bonuses: encourages advancing toward promotion
     whitePawnScores = np.array([
         [8, 8, 8, 8, 8, 8, 8, 8],
         [8, 8, 8, 8, 8, 8, 8, 8],
@@ -60,6 +72,7 @@ class ChessAI:
         [0, 0, 0, 0, 0, 0, 0, 0],
     ], dtype=int)
 
+    # Black pawn position bonuses: mirror of white (favors advancement toward rank 0)
     blackPawnScores = np.array([
         [0, 0, 0, 0, 0, 0, 0, 0],
         [1, 1, 1, 0, 0, 1, 1, 1],
@@ -71,6 +84,7 @@ class ChessAI:
         [8, 8, 8, 8, 8, 8, 8, 8],
     ], dtype=int)
 
+    # Maps piece codes to their position score tables
     piecePositionScores = {
         "N": knightScores,
         "B": bishopScores,
@@ -80,21 +94,29 @@ class ChessAI:
         "wp": whitePawnScores,
     }
 
-    CHECKMATE = 1000
-    STALEMATE = 0
-    MAX_DEPTH = 4
-    TIME_LIMIT = 0.6
-    killer_moves = {}
-    transposition_table = {}
-    start_time = 0.0
-    stop_search = False
+    # Search parameters and engine constants
+    CHECKMATE = 1000  # Maximum score (one side has won)
+    STALEMATE = 0  # No advantage (draw)
+    MAX_DEPTH = 4  # Maximum search depth
+    TIME_LIMIT = 0.6  # Time limit for move search (seconds)
+    
+    # Optimization caches: transposition table stores evaluated positions
+    killer_moves = {}  # Killer move heuristic for move ordering
+    transposition_table = {}  # Cache of (depth, score) for positions
+    start_time = 0.0  # Search start timestamp
+    stop_search = False  # Flag to terminate search on timeout
 
     @staticmethod
     def find_random_move(valid_moves):
+        """Return a random legal move (for testing or fallback)."""
         return random.choice(valid_moves)
 
     @classmethod
     def find_best_move_minmax(cls, gs, valid_moves):
+        """
+        Find best move using iterative deepening with alpha-beta pruning.
+        Returns deepest completed move; retains previous if time limit exceeded.
+        """
         cls.transposition_table = {}
         cls.killer_moves = {}
         cls.stop_search = False
@@ -102,6 +124,8 @@ class ChessAI:
 
         best_move = None
         turn_multiplier = 1 if gs.whiteToMove else -1
+        
+        # Iterative deepening: search progressively deeper until time limit
         for depth in range(1, cls.MAX_DEPTH + 1):
             if cls.stop_search:
                 break
@@ -110,6 +134,8 @@ class ChessAI:
             ordered_moves = sorted(valid_moves, key=cls._move_order_key, reverse=True)
             best_moves_at_depth = []
             best_score = -cls.CHECKMATE
+            
+            # Evaluate each root move at current depth
             for move in ordered_moves:
                 if cls.stop_search:
                     break
@@ -126,6 +152,8 @@ class ChessAI:
                 gs.undoMove()
                 if cls.stop_search:
                     break
+                
+                # Track all moves with best score (for tiebreaker selection)
                 if score > best_score:
                     best_score = score
                     best_moves_at_depth = [move]
@@ -135,17 +163,25 @@ class ChessAI:
                     alpha = score
                 if alpha >= beta:
                     break
+            
             if cls.stop_search:
                 break
+            
+            # Select best move at this depth using move-quality heuristic as tiebreaker
             if best_moves_at_depth:
                 best_move = max(
                     best_moves_at_depth,
                     key=lambda move: (cls._move_quality(move, gs), cls._move_order_key(move)),
                 )
+        
         return best_move if best_move is not None else (valid_moves[0] if valid_moves else None)
 
     @classmethod
     def _move_order_key(cls, move):
+        """
+        Heuristic for move ordering: prioritizes captures and promotions.
+        Used for alpha-beta pruning efficiency (examine promising moves first).
+        """
         victim_value = cls.pieceScore.get(move.pieceCaptured.kind, 0) if move.pieceCaptured is not None else 0
         attacker_value = cls.pieceScore.get(move.pieceMoved.kind, 0)
         promotion_bonus = 100 if move.isPawnPromotion else 0
@@ -154,14 +190,18 @@ class ChessAI:
 
     @classmethod
     def _move_quality(cls, move, gs):
+        """
+        Tiebreaker heuristic when multiple moves evaluate equally.
+        Prioritizes: captures > defending pieces > special moves > piece development.
+        """
         quality = 0.0
         
-        # Highest priority: captures
+        # Highest priority: captures (tactical moves that win material)
         if move.isCapture:
             captured_value = cls.pieceScore.get(move.pieceCaptured.kind, 0)
             attacker_value = cls.pieceScore.get(move.pieceMoved.kind, 0)
             
-            # Prioritize capturing high-value pieces
+            # Award higher bonus for capturing valuable pieces
             if move.pieceCaptured.kind == "Q":
                 quality += 10.0
             elif move.pieceCaptured.kind == "R":
@@ -171,27 +211,25 @@ class ChessAI:
             elif move.pieceCaptured.kind == "p":
                 quality += 1.0
             
-            # Bonus if winning material (capturing more valuable piece)
+            # Bonus if winning material, penalty if losing material
             if captured_value > attacker_value:
                 quality += 1.0
-            # Penalty if losing material (attacking less valuable piece with more valuable piece)
             elif captured_value < attacker_value * 0.5:
                 quality -= 0.5
         
-        # Second priority: moving pieces under attack to safety
+        # Second priority: move pieces under attack to safety
         if not move.isCapture and gs.squareUnderAttack(move.startRow, move.startCol):
             quality += 1.5
         
-        # Pawn promotion
+        # Special moves: promotion and castling
         if move.isPawnPromotion:
             quality += 2.0
-        
-        # Castling
         if move.isCastleMove:
             quality += 1.0
         
-        # Piece development (only if not doing something tactical)
-        if quality == 0.0:  # No tactical moves (no captures, no moving attacked pieces)
+        # Piece development: only evaluate if no tactical moves available
+        if quality == 0.0:
+            # Knight development from starting position
             if move.pieceMoved.kind == "N":
                 if move.startRow in (7, 0):
                     quality += 0.10
@@ -199,16 +237,20 @@ class ChessAI:
                     quality -= 0.15
                 else:
                     quality += 0.05
+            # Bishop development
             elif move.pieceMoved.kind == "B":
                 if move.startRow in (7, 0):
                     quality += 0.08
                 else:
                     quality += 0.01
+            # Rook: slight penalty for moving from corner (conserve for castling)
             elif move.pieceMoved.kind == "R":
                 if move.startRow in (7, 0) and move.startCol in (0, 7):
                     quality -= 0.05
+            # Queen: penalty for early development
             elif move.pieceMoved.kind == "Q":
                 quality -= 0.08
+            # Pawn strategy: advance central pawns more than flank pawns
             elif move.pieceMoved.kind == "p":
                 is_white = move.pieceMoved.color == "w"
                 forward_row = move.endRow if is_white else (7 - move.endRow)
@@ -237,6 +279,7 @@ class ChessAI:
                     else:
                         quality -= 0.10
             
+            # Bonus for moving toward center (except pawns)
             center_distance = abs(move.endRow - 3.5) + abs(move.endCol - 3.5)
             if move.pieceMoved.kind != "p":
                 quality += max(0.0, 3.0 - center_distance) * 0.01
@@ -245,6 +288,10 @@ class ChessAI:
 
     @classmethod
     def _position_key(cls, gs):
+        """
+        Create hashable position key for transposition table.
+        Includes board state, whose turn it is, castling rights, en passant.
+        """
         flat_codes = tuple(
             square.code if square is not None else "--"
             for row in gs.board
@@ -262,24 +309,35 @@ class ChessAI:
 
     @classmethod
     def _find_move_negamax_alphabeta(cls, gs, valid_moves, depth, alpha, beta, turn_multiplier):
+        """
+        Negamax search with alpha-beta pruning.
+        Maintains transposition table and killer move heuristic.
+        Returns 0 if time limit exceeded or search stopped.
+        """
+        # Check for timeout or stop signal
         if cls.stop_search:
             return 0
         if time.perf_counter() - cls.start_time > cls.TIME_LIMIT:
             cls.stop_search = True
             return 0
 
+        # Check transposition table for cached evaluation at this depth
         position_key = cls._position_key(gs)
         cached = cls.transposition_table.get(position_key)
         if cached is not None and cached[0] >= depth:
             return cached[1]
 
+        # Quiescence search at depth 0 to resolve captures
         if depth == 0:
             score = cls._quiescence_search(gs, valid_moves, alpha, beta, turn_multiplier)
             cls.transposition_table[position_key] = (depth, score)
             return score
 
+        # Negamax loop: evaluate child positions
         max_score = -cls.CHECKMATE
         ordered_moves = sorted(valid_moves, key=cls._move_order_key, reverse=True)
+        
+        # Apply killer move heuristic: prioritize moves that caused cutoffs at this depth
         killer_id = cls.killer_moves.get(depth)
         if killer_id is not None:
             for i, move in enumerate(ordered_moves):
@@ -287,6 +345,7 @@ class ChessAI:
                     ordered_moves.insert(0, ordered_moves.pop(i))
                     break
 
+        # Evaluate moves with alpha-beta pruning
         for move in ordered_moves:
             gs.makeMove(move)
             next_moves = gs.getValidMoves()
@@ -294,11 +353,14 @@ class ChessAI:
                 gs, next_moves, depth - 1, -beta, -alpha, -turn_multiplier
             )
             gs.undoMove()
+            
+            # Update alpha and check for beta cutoff
             if score > max_score:
                 max_score = score
             if max_score > alpha:
                 alpha = max_score
             if alpha >= beta:
+                # Store killer move if it's a quiet move (non-capture)
                 if not move.isCapture:
                     cls.killer_moves[depth] = move.moveID
                 break
@@ -308,20 +370,27 @@ class ChessAI:
 
     @classmethod
     def _quiescence_search(cls, gs, valid_moves, alpha, beta, turn_multiplier):
+        """
+        Quiescence search: extends depth 0 by analyzing all captures/promotions.
+        Prevents horizon effect where AI misses critical tactics.
+        """
         if cls.stop_search:
             return 0
         if time.perf_counter() - cls.start_time > cls.TIME_LIMIT:
             cls.stop_search = True
             return 0
 
+        # Stand-pat: current position evaluation (baseline)
         stand_pat = turn_multiplier * cls.score_board(gs)
         if stand_pat >= beta:
             return beta
         if alpha < stand_pat:
             alpha = stand_pat
 
+        # Only consider forcing moves (captures and promotions)
         captures = [move for move in valid_moves if move.isCapture or move.isPawnPromotion]
         ordered_captures = sorted(captures, key=cls._move_order_key, reverse=True)
+        
         for move in ordered_captures:
             if cls.stop_search:
                 break
@@ -337,20 +406,30 @@ class ChessAI:
             gs.undoMove()
             if cls.stop_search:
                 break
+            
+            # Alpha-beta pruning in quiescence search
             if score >= beta:
                 return beta
             if score > alpha:
                 alpha = score
+        
         return alpha
 
     @classmethod
     def score_board(cls, gs, valid_moves=None):
+        """
+        Evaluate position: material + position tables + center control + mobility.
+        Returns positive for white advantage, negative for black advantage.
+        """
+        # Checkmate/stalemate are terminal states
         if gs.checkmate:
             return -cls.CHECKMATE if gs.whiteToMove else cls.CHECKMATE
         if gs.stalemate:
             return cls.STALEMATE
 
         score = 0.0
+        
+        # Material evaluation: piece values + position bonuses
         for row in range(len(gs.board)):
             for col in range(len(gs.board[row])):
                 square = gs.board[row, col]
@@ -360,17 +439,21 @@ class ChessAI:
                 piece_value = cls.pieceScore[square.kind]
                 position_value = cls.piecePositionScores[position_key][row][col] * 0.1 if square.kind != "K" else 0
                 piece_score = piece_value + position_value
+                
+                # Add to white or subtract from white's perspective
                 if square.color == "w":
                     score += piece_score
                 else:
                     score -= piece_score
 
+        # Center control bonus: controlling center squares (d4, e4, d5, e5)
         white_center_squares = {(3, 3), (3, 4), (4, 3), (4, 4)}
         for row, col in white_center_squares:
             square = gs.board[row, col]
             if square is not None:
                 score += 0.1 if square.color == "w" else -0.1
 
+        # Mobility bonus: more legal moves = better position
         if valid_moves is None:
             valid_moves = gs.getValidMoves()
         mobility_score = 0.05 * len(valid_moves)
