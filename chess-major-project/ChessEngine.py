@@ -92,7 +92,7 @@ class GameState:
             "p": self.getPawnMove,
             "N": self.getKnightMove,
             "B": self.getBishopMove,
-            "R": self.getRockMove,
+            "R": self.getRookMove,
             "Q": self.getQueenMove,
             "K": self.getKingMove,
         }
@@ -436,7 +436,7 @@ class GameState:
                 else:
                     break
 
-    def getRockMove(self, r, c, moves):
+    def getRookMove(self, r, c, moves):
         """Generate all rook moves: sliding horizontally/vertically until blocked."""
         directions = ((-1, 0), (0, -1), (1, 0), (0, 1))
         enemyColor = "b" if self.whiteToMove else "w"
@@ -464,7 +464,7 @@ class GameState:
     def getQueenMove(self, r, c, moves):
         """Generate all queen moves: combines bishop and rook movement."""
         self.getBishopMove(r, c, moves)
-        self.getRockMove(r, c, moves)
+        self.getRookMove(r, c, moves)
 
     def getKingMove(self, r, c, moves):
         """Generate all king moves: up to 8 adjacent squares."""

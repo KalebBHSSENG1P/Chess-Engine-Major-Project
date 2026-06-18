@@ -123,8 +123,8 @@ class ChessAI:
     # Search parameters and engine constants
     CHECKMATE = 1000  # Maximum score (one side has won)
     STALEMATE = 0  # No advantage (draw)
-    MAX_DEPTH = 8  # Maximum search depth
-    TIME_LIMIT = 1.2  # Time limit for move search (seconds)
+    MAX_DEPTH = 4  # Maximum search depth
+    TIME_LIMIT = 1.5  # Time limit for move search (seconds)
     
     # Optimization caches: transposition table stores evaluated positions
     killer_moves = {}  # Killer move heuristic for move ordering
@@ -292,7 +292,7 @@ class ChessAI:
                 else:
                     # We're losing material or even trade: heavy penalty
                     material_loss = attacker_value - captured_value
-                    quality -= 5.0 + material_loss * 0.3
+                    quality -= 10.0 + material_loss * 0.3
             
             # Extra bonus for capturing a piece that was attacking our pieces
             # Find which of our pieces are currently under attack
@@ -330,7 +330,7 @@ class ChessAI:
                 gs.undoMove()
                 # Strong bonus for blocking check without moving king
                 if not king_still_in_check:
-                    quality += 2.5
+                    quality += 3.5
         
         # Piece safety: dynamic bonus for moving any piece under attack to safety
         # Bonus scales with piece value: queen gets biggest bonus, pawns smallest
@@ -343,11 +343,14 @@ class ChessAI:
                 gs.undoMove()
                 # If piece evades capture, give dynamic bonus based on piece value
                 if not piece_still_under_attack:
-                    piece_value = cls.pieceScore.get(move.pieceMoved.kind, 0)
-                    # Queen: 10 -> +1.0, Rook: 5 -> +0.5, Bishop/Knight: 3-3.25 -> +0.3-0.32, Pawn: 1 -> +0.1
-                    quality += piece_value * 0.15
+                    if move.pieceMoved.kind != "K":
+                        piece_value = cls.pieceScore.get(move.pieceMoved.kind, 0)
+                        # Queen: 10 -> +1.0, Rook: 5 -> +0.5, Bishop/Knight: 3-3.25 -> +0.3-0.32, Pawn: 1 -> +0.1
+                        quality += piece_value * 0.15
+                    else:
+                        quality += 0.1
         
-        # CRITICAL: Heavy penalty for moving piece to a square under attack (non-free square)
+        # CRITICAL: Heavy penalty for moving piece to a square under attack
         # Extra severe penalty for pieces captured by pawns (bad trades)
         if not move.isCapture and move.pieceMoved.kind != "K":
             gs.makeMove(move)
@@ -372,14 +375,14 @@ class ChessAI:
                 
                 # Much heavier penalty for pieces captured by pawns (bad trades)
                 if pawn_can_capture:
-                    quality -= 30 + piece_value * 1.0
+                    quality -= 30 + piece_value
                 else:
-                    # Very heavy penalty for moving to any attacked square (non-free square)
-                    quality -= 15 + piece_value * 0.4
+                    # Very heavy penalty for moving to any attacked square
+                    quality -= 20 + piece_value * 0.4
         
         # Second priority: move pieces under attack to safety
         if not move.isCapture and gs.squareUnderAttack(move.startRow, move.startCol):
-            # Higher bonus for moving queen to safety (already handled above) 
+            # Higher bonus for moving queen to safety
             if move.pieceMoved.kind != "Q":
                 quality += 1.5
         
@@ -387,79 +390,88 @@ class ChessAI:
         if move.isPawnPromotion:
             quality += 2.0
         if move.isCastleMove:
-            quality += 1.2
+            quality += 1.0
         
         # Slight penalty for checking opponent's king (very minor disincentive)
         gs.makeMove(move)
         if gs.inCheck():
-            quality -= 0.03
+            quality -= 0.05
         gs.undoMove()
         
         # Special moves: promotion and castling
         if move.isPawnPromotion:
             quality += 2.0
         if move.isCastleMove:
-            quality += 1.2
+            quality += 0.75
         
         # Piece development: only evaluate if no tactical moves available
         if quality == 0.0:
-            # Knight development from starting position
-            if move.pieceMoved.kind == "N":
-                if move.startRow in (7, 0):
-                    quality += 0.10
-                if move.endCol in (0, 7) or move.endRow in (0, 7):
-                    quality -= 0.15
-                else:
-                    quality += 0.05
-            # Bishop development
-            elif move.pieceMoved.kind == "B":
-                if move.startRow in (7, 0):
-                    quality += 0.08
-                else:
-                    quality += 0.01
-            # King: heavy penalty for moving (preserves castling rights)
-            elif move.pieceMoved.kind == "K":
-                quality -= 0.20
-            # Rook: slight penalty for moving from corner (conserve for castling)
-            elif move.pieceMoved.kind == "R":
-                if move.startRow in (7, 0) and move.startCol in (0, 7):
-                    quality -= 0.05
-            # Queen: penalty for early development
-            elif move.pieceMoved.kind == "Q":
-                quality -= 0.08
-            # Pawn strategy: advance central pawns more than flank pawns
-            elif move.pieceMoved.kind == "p":
-                is_white = move.pieceMoved.color == "w"
-                forward_row = move.endRow if is_white else (7 - move.endRow)
-                is_center = move.endCol in (3, 4)
-                is_center_adjacent = move.endCol in (2, 5)
-                
-                if forward_row <= 2:
-                    quality -= 0.25
-                elif forward_row == 3:
-                    if is_center:
-                        quality += 0.22
-                    elif is_center_adjacent:
-                        quality += 0.14
-                    else:
-                        quality -= 0.05
-                elif forward_row == 4:
-                    if is_center:
-                        quality += 0.18
-                    elif is_center_adjacent:
+            # Check if square is under attack
+            gs.makeMove(move)
+            dest_under_attack = gs.squareUnderAttack(move.endRow, move.endCol)
+            gs.undoMove()
+            if not dest_under_attack: # If square is not under attack, only then evaluate development bonuses/penalties
+                # Knight development from starting position
+                if move.pieceMoved.kind == "N":
+                    if move.startRow in (7, 0):
                         quality += 0.10
+                    if move.endCol in (0, 7) or move.endRow in (0, 7):
+                        quality -= 0.15
                     else:
-                        quality -= 0.02
-                else:
-                    if is_center or is_center_adjacent:
                         quality += 0.05
+                # Bishop development
+                elif move.pieceMoved.kind == "B":
+                    if move.startRow in (7, 0):
+                        quality += 0.08
+                    if move.endRow in (2, 5):
+                        quality -= 0.15
                     else:
-                        quality -= 0.10
-            
-            # Bonus for moving toward center (except pawns)
+                        quality += 0.01
+                # King: heavy penalty for moving (preserves castling rights)
+                elif move.pieceMoved.kind == "K":
+                    quality -= 0.20
+                # Rook: slight penalty for moving from corner (conserve for castling)
+                elif move.pieceMoved.kind == "R":
+                    if move.startRow in (7, 0) and move.startCol in (0, 7):
+                        quality -= 0.05
+                # Queen: penalty for early development
+                elif move.pieceMoved.kind == "Q":
+                    quality -= 0.08
+                # Pawn strategy: advance central pawns more than flank pawns
+                elif move.pieceMoved.kind == "p":
+                    is_white = move.pieceMoved.color == "w"
+                    forward_row = move.endRow if is_white else (7 - move.endRow)
+                    is_center = move.endCol in (3, 4)
+                    is_center_adjacent = move.endCol in (2, 5)
+                    
+                    if forward_row <= 2:
+                        quality -= 0.25
+                    elif forward_row == 3:
+                        if is_center:
+                            quality += 0.22
+                        elif is_center_adjacent:
+                            quality += 0.14
+                        else:
+                            quality -= 0.05
+                    elif forward_row == 4:
+                        if is_center:
+                            quality += 0.18
+                        elif is_center_adjacent:
+                            quality += 0.10
+                        else:
+                            quality -= 0.02
+                    else:
+                        if is_center or is_center_adjacent:
+                            quality += 0.05
+                        else:
+                            quality -= 0.10
+            else:
+                pass # No development bonus if moving to attacked square
+
+            # Bonus for moving toward center (except pawns) even when square is under attack, hopefully balancing out lost piece bonuses/penalties
             center_distance = abs(move.endRow - 3.5) + abs(move.endCol - 3.5)
             if move.pieceMoved.kind != "p":
-                quality += max(0.0, 3.0 - center_distance) * 0.01
+                quality += max(0.0, 2.0 - center_distance) * 0.01
         
         return quality
 
