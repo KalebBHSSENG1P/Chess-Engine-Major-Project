@@ -395,7 +395,7 @@ class ChessAI:
         # Slight penalty for checking opponent's king (very minor disincentive)
         gs.makeMove(move)
         if gs.inCheck():
-            quality -= 0.05
+            quality -= 0.03
         gs.undoMove()
         
         # Special moves: promotion and castling
