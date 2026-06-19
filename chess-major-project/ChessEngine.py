@@ -5,7 +5,7 @@ Maintains move history and game state (checkmate, stalemate, check).
 """
 
 import numpy as np
-
+from Debug import debug_print, prof_start, prof_end, prof_report
 
 class Piece:
     """Base class for all chess pieces. Stores color ('w'/'b') and kind ('p','N','B','R','Q','K')."""
@@ -86,6 +86,9 @@ class GameState:
         self.whiteToMove = True
         # Move history for undo functionality and game replay
         self.moveLog = []
+
+        # Optimization caches for move generation
+        self.attack_cache = {}
         
         # Dispatch table: maps piece kind to move generation function
         self.moveFunctions = {
@@ -122,6 +125,9 @@ class GameState:
 
     def makeMove(self, move):
         """Execute move: update board, track history, handle special moves, update game state."""
+        # Clear attack cache since board state is changing and cached values may no longer be valid
+        self.attack_cache.clear()
+
         # Update board: remove piece from start, place at end
         self.board[move.startRow, move.startCol] = None
         self.board[move.endRow, move.endCol] = move.pieceMoved
@@ -178,6 +184,9 @@ class GameState:
 
     def undoMove(self):
         """Reverse the last move: restore board, piece positions, game state, and castling rights."""
+        # Clear attack cache since board state is changing and cached values may no longer be valid
+        self.attack_cache.clear()
+
         # Safety check: don't undo if no moves have been made
         if len(self.moveLog) != 0:
             move = self.moveLog.pop()
@@ -269,6 +278,8 @@ class GameState:
         Generate all legal moves for current player (excluding moves that leave king in check).
         Detects checkmate and stalemate conditions.
         """
+        # Profiling start for getValidMoves
+        t0 = prof_start("getValidMoves")
         # Save current en passant and castling state to restore after validity check
         tempEnpassantPossible = self.enpassantPossible
         tempCastleRights = CastleRights(
@@ -319,6 +330,7 @@ class GameState:
         # Restore temporary game state
         self.enpassantPossible = tempEnpassantPossible
         self.currentCastlingRights = tempCastleRights
+        prof_end("getValidMoves", t0)
         return moves
 
     def inCheck(self):
@@ -334,6 +346,12 @@ class GameState:
 
     def squareUnderAttack(self, r, c):
         """Check if any opponent piece can attack square (r, c)."""
+        # Profiling start for squareUnderAttack
+        t0 = prof_start("squareUnderAttack")
+        # Check cache first to avoid redundant calculations
+        key = (r, c, self.whiteToMove)
+        if key in self.attack_cache:
+            return self.attack_cache[key]
         # Temporarily switch to opponent's perspective
         self.whiteToMove = not self.whiteToMove
         # Generate all opponent's possible moves
@@ -343,7 +361,10 @@ class GameState:
         # Check if any opponent move attacks this square
         for move in oppMoves:
             if move.endRow == r and move.endCol == c:
-                return True
+                return True       
+        # No attacks found
+        prof_end("squareUnderAttack", t0)
+        self.attack_cache[key] = False
         return False
 
     def getAllPossibleMoves(self):

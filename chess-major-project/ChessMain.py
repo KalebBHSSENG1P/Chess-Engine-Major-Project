@@ -10,6 +10,8 @@ from concurrent.futures import ProcessPoolExecutor
 from ChessEngine import GameState, Move
 from SmartMoveFinder import ChessAI
 
+from Debug import debug_print, prof_start, prof_end, prof_report
+
 # Board and window dimensions
 BOARD_WIDTH = BOARD_HEIGHT = 512  # 512x512 pixel chess board
 MOVE_LOG_PANEL_WIDTH = 270  # Right sidebar showing move history

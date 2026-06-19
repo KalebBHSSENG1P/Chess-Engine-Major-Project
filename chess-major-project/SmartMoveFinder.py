@@ -4,16 +4,18 @@ Features: iterative deepening, transposition table, killer moves, quiescence sea
 """
 import random
 import time
-import numpy as np
-
+from Debug import debug_print, prof_start, prof_end, prof_report
 
 class ChessAI:
     # Piece values (in pawns): used for material counting and move evaluation
     pieceScore = {"K": 1000, "Q": 10, "R": 5, "B": 3.25, "N": 3, "p": 1}
 
+    # Debug node counter for performance analysis
+    node_count = 0
+
     # Piece-square tables: position bonus/penalty for each piece type on each square
     # Higher values = more desirable positions (e.g., knights in center > knights on edges)
-    knightScores = np.array([
+    knightScores = [
         [1, 1, 1, 1, 1, 1, 1, 1],
         [1, 2, 2, 2, 2, 2, 2, 1],
         [1, 2, 3, 3, 3, 3, 2, 1],
@@ -22,10 +24,10 @@ class ChessAI:
         [1, 2, 3, 3, 3, 3, 2, 1],
         [1, 2, 2, 2, 2, 2, 2, 1],
         [1, 1, 1, 1, 1, 1, 1, 1],
-    ], dtype=int)
+    ]
 
     # Bishop position bonuses: favors long diagonals and center
-    bishopScores = np.array([
+    bishopScores = [
         [4, 3, 2, 1, 1, 2, 3, 4],
         [3, 4, 3, 2, 2, 3, 4, 3],
         [2, 3, 4, 3, 3, 4, 3, 2],
@@ -34,10 +36,10 @@ class ChessAI:
         [2, 3, 4, 3, 3, 4, 3, 2],
         [3, 4, 3, 2, 2, 3, 4, 3],
         [4, 3, 2, 1, 1, 2, 3, 4],
-    ], dtype=int)
+    ]
 
     # Queen position bonuses: prefers center with slight bias toward back rank
-    queenScores = np.array([
+    queenScores = [
         [1, 1, 1, 3, 1, 1, 1, 1],
         [1, 2, 3, 3, 3, 1, 1, 1],
         [1, 4, 3, 3, 3, 4, 2, 1],
@@ -46,10 +48,10 @@ class ChessAI:
         [1, 4, 3, 3, 3, 4, 2, 1],
         [1, 1, 2, 3, 3, 1, 1, 1],
         [1, 1, 1, 3, 1, 1, 1, 1],
-    ], dtype=int)
+    ]
 
     # Rook position bonuses: favors open files and back rank
-    rookScores = np.array([
+    rookScores = [
         [4, 3, 4, 4, 4, 4, 3, 4],
         [4, 4, 4, 4, 4, 4, 4, 4],
         [1, 1, 2, 3, 3, 2, 1, 1],
@@ -58,10 +60,10 @@ class ChessAI:
         [1, 1, 2, 3, 3, 2, 1, 1],
         [4, 4, 4, 4, 4, 4, 4, 4],
         [4, 3, 4, 4, 4, 4, 3, 4],
-    ], dtype=int)
+    ]
 
     # White pawn position bonuses: encourages advancing toward promotion
-    whitePawnScores = np.array([
+    whitePawnScores = [
         [8, 8, 8, 8, 8, 8, 8, 8],
         [8, 8, 8, 8, 8, 8, 8, 8],
         [5, 6, 6, 7, 7, 6, 6, 5],
@@ -70,10 +72,10 @@ class ChessAI:
         [1, 1, 2, 3, 3, 2, 1, 1],
         [1, 1, 1, 0, 0, 1, 1, 1],
         [0, 0, 0, 0, 0, 0, 0, 0],
-    ], dtype=int)
+    ]
 
     # Black pawn position bonuses: mirror of white (favors advancement toward rank 0)
-    blackPawnScores = np.array([
+    blackPawnScores = [
         [0, 0, 0, 0, 0, 0, 0, 0],
         [1, 1, 1, 0, 0, 1, 1, 1],
         [1, 1, 2, 3, 3, 2, 1, 1],
@@ -82,7 +84,7 @@ class ChessAI:
         [5, 6, 6, 7, 7, 6, 6, 5],
         [8, 8, 8, 8, 8, 8, 8, 8],
         [8, 8, 8, 8, 8, 8, 8, 8],
-    ], dtype=int)
+    ]
 
     # Maps piece codes to their position score tables
     piecePositionScores = {
@@ -123,11 +125,12 @@ class ChessAI:
     # Search parameters and engine constants
     CHECKMATE = 1000  # Maximum score (one side has won)
     STALEMATE = 0  # No advantage (draw)
-    MAX_DEPTH = 4  # Maximum search depth
-    TIME_LIMIT = 1.5  # Time limit for move search (seconds)
+    MAX_DEPTH = 3  # Maximum search depth
+    TIME_LIMIT = 3.5  # Time limit for move search (seconds)
     
     # Optimization caches: transposition table stores evaluated positions
     killer_moves = {}  # Killer move heuristic for move ordering
+    eval_cache = {}  # Cache for static board evaluations
     transposition_table = {}  # Cache of (depth, score) for positions
     start_time = 0.0  # Search start timestamp
     stop_search = False  # Flag to terminate search on timeout
@@ -160,6 +163,7 @@ class ChessAI:
                     legal_book_moves.append(move)
             # Return random legal book move if any exist
             if legal_book_moves:
+                debug_print(f"Book move found for position '{move_sequence}': {[str(m) for m in legal_book_moves]}")
                 return random.choice(legal_book_moves)
         
         return None
@@ -175,14 +179,20 @@ class ChessAI:
         if book_move is not None:
             return book_move
         
+        # Optimization caches
         cls.transposition_table = {}
         cls.killer_moves = {}
+        cls.eval_cache = {}
+
+        # reset number of nodes searched (for debugging only)
+        cls.node_count = 0
+
+        # Iterative deepening setup
         cls.stop_search = False
         cls.start_time = time.perf_counter()
-
         best_move = None
         turn_multiplier = 1 if gs.whiteToMove else -1
-        
+
         # Iterative deepening: search progressively deeper until time limit
         for depth in range(1, cls.MAX_DEPTH + 1):
             if cls.stop_search:
@@ -193,6 +203,9 @@ class ChessAI:
             best_moves_at_depth = []
             best_score = -cls.CHECKMATE
             
+            # Debug message
+            debug_print(f"Starting search at depth {depth}, no. of valid moves: {len(valid_moves)}")
+
             # Evaluate each root move at current depth
             for move in ordered_moves:
                 if cls.stop_search:
@@ -232,6 +245,17 @@ class ChessAI:
                     key=lambda move: (cls._move_quality(move, gs), cls._move_order_key(move)),
                 )
         
+        # get move quality for debugging output (only for final selected move, not all moves at depth)
+        move_quality = cls._move_quality(best_move, gs)
+        # print debug message for best move found at end of search, including score and qualities
+        if best_move is not None:
+            move_quality = cls._move_quality(best_move, gs)
+            debug_print(f"Finished search. Best move: {best_move} with score: {best_score} and tiebreaker quality: {move_quality}")
+        else:
+            debug_print("Finished search. No best move found.")
+        # print other debug information at the end of each move search
+        debug_print(f"Nodes searched: {cls.node_count}, time taken: {time.perf_counter() - cls.start_time:.2f} seconds")
+        prof_report()
         return best_move if best_move is not None else (valid_moves[0] if valid_moves else None)
 
     @classmethod
@@ -503,13 +527,22 @@ class ChessAI:
         Maintains transposition table and killer move heuristic.
         Returns 0 if time limit exceeded or search stopped.
         """
+        # Profling start for negamax search
+        t0 = prof_start("negamax")
+
+        # Debug message printing negamax depth, prints each node visited so off by default even though debug mode is on. 
+        # debug_print(f"Negamax depth={depth}")
+        # increment node count (for debugging purposes only)
+        cls.node_count += 1
+
         # Check for timeout or stop signal
         if cls.stop_search:
             return 0
         if time.perf_counter() - cls.start_time > cls.TIME_LIMIT:
+            debug_print("Time limit exceeded, stopping search")
             cls.stop_search = True
             return 0
-
+        
         # Check transposition table for cached evaluation at this depth
         position_key = cls._position_key(gs)
         cached = cls.transposition_table.get(position_key)
@@ -555,19 +588,26 @@ class ChessAI:
                 break
 
         cls.transposition_table[position_key] = (depth, max_score)
+        prof_end("negamax", t0)
         return max_score
 
     @classmethod
-    def _quiescence_search(cls, gs, valid_moves, alpha, beta, turn_multiplier):
+    def _quiescence_search(cls, gs, next_moves, alpha, beta, turn_multiplier, qdepth = 0):
         """
         Quiescence search: extends depth 0 by analyzing all captures/promotions.
         Prevents horizon effect where AI misses critical tactics.
         """
+        # Profiling start for quiescence search
+        t0 = prof_start("quiescence")
+
+        # Debug message printing quiescence search depth, prints each node visited so off by default even though debug mode is on. 
+        # debug_print(f"Quiescence search depth={qdepth}")
+        # Check for timeout
         if cls.stop_search:
             return 0
-        if time.perf_counter() - cls.start_time > cls.TIME_LIMIT:
-            cls.stop_search = True
-            return 0
+
+        # increment node count (for debugging purposes only)
+        cls.node_count += 1
 
         # Stand-pat: current position evaluation (baseline)
         stand_pat = turn_multiplier * cls.score_board(gs)
@@ -577,20 +617,24 @@ class ChessAI:
             alpha = stand_pat
 
         # Only consider forcing moves (captures and promotions)
-        captures = [move for move in valid_moves if move.isCapture or move.isPawnPromotion]
+        captures = [move for move in gs.getAllPossibleMoves() if move.isCapture or move.isPawnPromotion]
+        # debug_print(f"Quiescence captures: {len(captures)}")
+
+        # Order captures by most promising first
         ordered_captures = sorted(captures, key=cls._move_order_key, reverse=True)
         
         for move in ordered_captures:
             if cls.stop_search:
                 break
             gs.makeMove(move)
-            next_moves = gs.getValidMoves()
+            next_moves = gs.getAllPossibleMoves()
             score = -cls._quiescence_search(
                 gs,
                 next_moves,
                 -beta,
                 -alpha,
                 -turn_multiplier,
+                qdepth + 1
             )
             gs.undoMove()
             if cls.stop_search:
@@ -602,6 +646,7 @@ class ChessAI:
             if score > alpha:
                 alpha = score
         
+        prof_end("quiescence", t0)
         return alpha
 
     @classmethod
@@ -610,10 +655,20 @@ class ChessAI:
         Evaluate position: material + position tables + center control + mobility.
         Returns positive for white advantage, negative for black advantage.
         """
+        # Profiling start for board evaluation
+        t0 = prof_start("score_board")
+
+        # eval cache check: if position has been evaluated before, return cached score
+        key = cls._position_key(gs)
+        if key in cls.eval_cache:
+            return cls.eval_cache[key]
+
         # Checkmate/stalemate are terminal states
         if gs.checkmate:
+            debug_print("Checkmate detected")
             return -cls.CHECKMATE if gs.whiteToMove else cls.CHECKMATE
         if gs.stalemate:
+            debug_print("Stalemate detected")
             return cls.STALEMATE
 
         score = 0.0
@@ -650,4 +705,6 @@ class ChessAI:
             mobility_score = -mobility_score
         score += mobility_score
 
+        cls.eval_cache[key] = score
+        prof_end("score_board", t0)
         return score
