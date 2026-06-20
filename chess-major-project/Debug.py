@@ -31,10 +31,11 @@ def prof_end(name, t0):
 def prof_report():
     """Print a summary of all profiled functions."""
     if DEBUG:
-        print("\n==== MICRO PROFILER REPORT ====")
+        print("\n==== MICRO PROFILER REPORT ====") # heading of table
+        # Table contents: function name, calls, total time, average time per call
         for name, (calls, total) in PROFILE.items():
             avg = total / calls if calls else 0
             print(f"{name:25s}  calls={calls:8d}  total={total:8.4f}s  avg={avg:10.7f}s")
-        print("===============================\n")
+        print("===============================\n") # footer of table
     else:
         return

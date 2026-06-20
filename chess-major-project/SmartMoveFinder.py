@@ -126,7 +126,7 @@ class ChessAI:
     CHECKMATE = 1000  # Maximum score (one side has won)
     STALEMATE = 0  # No advantage (draw)
     MAX_DEPTH = 3  # Maximum search depth
-    TIME_LIMIT = 3.5  # Time limit for move search (seconds)
+    TIME_LIMIT = 4  # Time limit for move search (seconds)
     
     # Optimization caches: transposition table stores evaluated positions
     killer_moves = {}  # Killer move heuristic for move ordering
@@ -399,10 +399,10 @@ class ChessAI:
                 
                 # Much heavier penalty for pieces captured by pawns (bad trades)
                 if pawn_can_capture:
-                    quality -= 30 + piece_value
+                    quality -= 3.0 + piece_value
                 else:
                     # Very heavy penalty for moving to any attacked square
-                    quality -= 20 + piece_value * 0.4
+                    quality -= 2.0 + piece_value * 0.4
         
         # Second priority: move pieces under attack to safety
         if not move.isCapture and gs.squareUnderAttack(move.startRow, move.startCol):
@@ -453,7 +453,7 @@ class ChessAI:
                         quality += 0.01
                 # King: heavy penalty for moving (preserves castling rights)
                 elif move.pieceMoved.kind == "K":
-                    quality -= 0.20
+                    quality -= 5.0
                 # Rook: slight penalty for moving from corner (conserve for castling)
                 elif move.pieceMoved.kind == "R":
                     if move.startRow in (7, 0) and move.startCol in (0, 7):
@@ -592,7 +592,7 @@ class ChessAI:
         return max_score
 
     @classmethod
-    def _quiescence_search(cls, gs, next_moves, alpha, beta, turn_multiplier, qdepth = 0):
+    def _quiescence_search(cls, gs, valid_move, alpha, beta, turn_multiplier, qdepth = 0):
         """
         Quiescence search: extends depth 0 by analyzing all captures/promotions.
         Prevents horizon effect where AI misses critical tactics.
@@ -617,7 +617,7 @@ class ChessAI:
             alpha = stand_pat
 
         # Only consider forcing moves (captures and promotions)
-        captures = [move for move in gs.getAllPossibleMoves() if move.isCapture or move.isPawnPromotion]
+        captures = [move for move in valid_move if move.isCapture or move.isPawnPromotion]
         # debug_print(f"Quiescence captures: {len(captures)}")
 
         # Order captures by most promising first
@@ -627,10 +627,10 @@ class ChessAI:
             if cls.stop_search:
                 break
             gs.makeMove(move)
-            next_moves = gs.getAllPossibleMoves()
+            valid_move = gs.getValidMoves()
             score = -cls._quiescence_search(
                 gs,
-                next_moves,
+                valid_move,
                 -beta,
                 -alpha,
                 -turn_multiplier,

@@ -52,7 +52,7 @@ class ChessApp:
         self.sq_selected = ()  # Currently selected square (row, col)
         self.player_clicks = []  # Two-element list: [start_sq, end_sq]
         # Player modes: can be human (True) or AI (False)
-        self.player_one = False  # White player: human by default
+        self.player_one = True  # White player: human by default
         self.player_two = False  # Black player: AI by default
         # AI calculation state
         self.ai_thinking = False  # Flag: AI is calculating

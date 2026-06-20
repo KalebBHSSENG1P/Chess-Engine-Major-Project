@@ -170,7 +170,7 @@ class GameState:
         # Record en passant state in history for undo
         self.enpassantPossibleLog.append(self.enpassantPossible)
         # Update castling rights if king or rook moved
-        self.updateCastlRights(move)
+        self.updateCastleRights(move)
         # Record castling rights in history for undo
         self.castleRightLog.append(
             CastleRights(
@@ -235,7 +235,7 @@ class GameState:
             self.checkmate = False
             self.stalemate = False
 
-    def updateCastlRights(self, move):
+    def updateCastleRights(self, move):
         """Remove castling rights when king or rook moves, or when rook is captured."""
         # If king moves, both castling directions become impossible
         if move.pieceMoved.code == "wK":
@@ -369,6 +369,8 @@ class GameState:
 
     def getAllPossibleMoves(self):
         """Generate all pseudo-legal moves (not filtering out moves leaving king in check)."""
+        # profiling start for getAllPossibleMoves
+        t0 = prof_start("getAllPossibleMoves")
         moves = []
         # Iterate through all board squares
         for r in range(8):
@@ -382,6 +384,7 @@ class GameState:
                 ):
                     # Use dispatch table to call appropriate move generator
                     self.moveFunctions[piece.kind](r, c, moves)
+        prof_end("getAllPossibleMoves", t0)
         return moves
 
     def getPawnMove(self, r, c, moves):
