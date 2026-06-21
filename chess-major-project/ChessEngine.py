@@ -89,6 +89,8 @@ class GameState:
 
         # Optimization caches for move generation
         self.attack_cache = {}
+        self.cached_opp_moves = None
+        self.cached_opp_turn = None
         
         # Dispatch table: maps piece kind to move generation function
         self.moveFunctions = {
@@ -125,8 +127,10 @@ class GameState:
 
     def makeMove(self, move):
         """Execute move: update board, track history, handle special moves, update game state."""
-        # Clear attack cache since board state is changing and cached values may no longer be valid
+        # Clear caches since board state is changing and cached values may no longer be valid
         self.attack_cache.clear()
+        self.cached_opp_moves = None
+        self.cached_opp_turn = None
 
         # Update board: remove piece from start, place at end
         self.board[move.startRow, move.startCol] = None
@@ -184,8 +188,10 @@ class GameState:
 
     def undoMove(self):
         """Reverse the last move: restore board, piece positions, game state, and castling rights."""
-        # Clear attack cache since board state is changing and cached values may no longer be valid
+        # Clear caches since board state is changing and cached values may no longer be valid
         self.attack_cache.clear()
+        self.cached_opp_moves = None
+        self.cached_opp_turn = None
 
         # Safety check: don't undo if no moves have been made
         if len(self.moveLog) != 0:
@@ -354,17 +360,24 @@ class GameState:
             return self.attack_cache[key]
         # Temporarily switch to opponent's perspective
         self.whiteToMove = not self.whiteToMove
-        # Generate all opponent's possible moves
-        oppMoves = self.getAllPossibleMoves()
+        # Check cache before generating all possible opponent moves
+        if self.cached_opp_moves is not None and self.cached_opp_turn == self.whiteToMove:
+            oppMoves = self.cached_opp_moves
+        # If nothing is cached, generate all possible opponent moves
+        else:
+            oppMoves = self.getAllPossibleMoves()
+            self.cached_opp_moves = oppMoves
+            self.cached_opp_turn = self.whiteToMove
         # Switch back
         self.whiteToMove = not self.whiteToMove
         # Check if any opponent move attacks this square
         for move in oppMoves:
             if move.endRow == r and move.endCol == c:
+                self.attack_cache[key] = True
                 return True       
         # No attacks found
-        prof_end("squareUnderAttack", t0)
         self.attack_cache[key] = False
+        prof_end("squareUnderAttack", t0)
         return False
 
     def getAllPossibleMoves(self):

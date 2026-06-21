@@ -125,7 +125,7 @@ class ChessAI:
     # Search parameters and engine constants
     CHECKMATE = 1000  # Maximum score (one side has won)
     STALEMATE = 0  # No advantage (draw)
-    MAX_DEPTH = 3  # Maximum search depth
+    MAX_DEPTH = 4  # Maximum search depth
     TIME_LIMIT = 4  # Time limit for move search (seconds)
     
     # Optimization caches: transposition table stores evaluated positions
@@ -191,6 +191,8 @@ class ChessAI:
         cls.stop_search = False
         cls.start_time = time.perf_counter()
         best_move = None
+        best_move_fallback = None
+        best_score_fallback = None
         turn_multiplier = 1 if gs.whiteToMove else -1
 
         # Iterative deepening: search progressively deeper until time limit
@@ -244,19 +246,24 @@ class ChessAI:
                     best_moves_at_depth,
                     key=lambda move: (cls._move_quality(move, gs), cls._move_order_key(move)),
                 )
+                best_move_fallback = best_move
+                best_score_fallback = best_score
         
         # get move quality for debugging output (only for final selected move, not all moves at depth)
         move_quality = cls._move_quality(best_move, gs)
         # print debug message for best move found at end of search, including score and qualities
         if best_move is not None:
             move_quality = cls._move_quality(best_move, gs)
-            debug_print(f"Finished search. Best move: {best_move} with score: {best_score} and tiebreaker quality: {move_quality}")
+            debug_print(f"Finished search. Best move: {best_move} with score: {best_score_fallback} and tiebreaker quality: {move_quality}")
         else:
             debug_print("Finished search. No best move found.")
         # print other debug information at the end of each move search
         debug_print(f"Nodes searched: {cls.node_count}, time taken: {time.perf_counter() - cls.start_time:.2f} seconds")
         prof_report()
-        return best_move if best_move is not None else (valid_moves[0] if valid_moves else None)
+        if best_move_fallback is not None:
+            return best_move_fallback
+        else:
+            return valid_moves[0]  # fallback only if nothing was searched
 
     @classmethod
     def _move_order_key(cls, move):
@@ -414,7 +421,7 @@ class ChessAI:
         if move.isPawnPromotion:
             quality += 2.0
         if move.isCastleMove:
-            quality += 1.0
+            quality += 0.75
         
         # Slight penalty for checking opponent's king (very minor disincentive)
         gs.makeMove(move)
@@ -453,11 +460,11 @@ class ChessAI:
                         quality += 0.01
                 # King: heavy penalty for moving (preserves castling rights)
                 elif move.pieceMoved.kind == "K":
-                    quality -= 5.0
+                    quality -= 10.0
                 # Rook: slight penalty for moving from corner (conserve for castling)
                 elif move.pieceMoved.kind == "R":
                     if move.startRow in (7, 0) and move.startCol in (0, 7):
-                        quality -= 0.05
+                        quality -= 1.0
                 # Queen: penalty for early development
                 elif move.pieceMoved.kind == "Q":
                     quality -= 0.08

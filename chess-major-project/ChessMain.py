@@ -11,16 +11,8 @@ from ChessEngine import GameState, Move
 from SmartMoveFinder import ChessAI
 
 from Debug import debug_print, prof_start, prof_end, prof_report
-
-# Board and window dimensions
-BOARD_WIDTH = BOARD_HEIGHT = 512  # 512x512 pixel chess board
-MOVE_LOG_PANEL_WIDTH = 270  # Right sidebar showing move history
-MOVE_LOG_PANEL_HEIGHT = BOARD_HEIGHT  # Sidebar height matches board
-DIMENSION = 8  # 8x8 chess board
-SQ_SIZE = BOARD_HEIGHT // DIMENSION  # Each square is 64x64 pixels
-MAX_FPS = 15  # Frame rate cap for game loop
-IMAGE_PATH = os.path.join(os.path.dirname(__file__), "images")  # Path to piece images
-
+from ChessMenu import run_menu
+from pyvidplayer import Video
 
 class ChessApp:
     """Main game application: manages game state, UI rendering, user input, and AI."""
@@ -28,16 +20,49 @@ class ChessApp:
         # Initialize pygame and create game window
         p.init()
         p.display.set_caption("Chess")
-        self.screen = p.display.set_mode((BOARD_WIDTH + MOVE_LOG_PANEL_WIDTH, BOARD_HEIGHT))
+        self.screen = p.display.set_mode((0, 0), p.FULLSCREEN)
+        self.screen_width, self.screen_height = self.screen.get_size()
         self.clock = p.time.Clock()
+        # Calculate size of board and move long panel
+        self.BOARD_HEIGHT = self.BOARD_WIDTH = round(self.screen_height * 0.85)
+        self.SQ_SIZE = self.BOARD_HEIGHT // 8
+        self.MOVE_LOG_PANEL_WIDTH = 815
+        self.MOVE_LOG_PANEL_HEIGHT = 1200
+        self.BOARD_Y = (self.screen_height - self.BOARD_HEIGHT) // 2
+        self.BOARD_X = 200
+        self.DIMENSION = 8  # 8x8 chess board
+        self.MAX_FPS = 15  # Frame rate cap for game loop
+        self.IMAGE_PATH = os.path.join(os.path.dirname(__file__), "images")  # Path to piece images
         # Font for move log display
-        self.move_log_font = p.font.SysFont("Arial", 20, False, False)
+        self.move_log_font = p.font.SysFont("impact", 35, False, False)
         self.images = {}  # Dictionary to cache piece images
         self.load_images()
         # Persistent single-worker executor for background AI moves
         self.ai_executor = ProcessPoolExecutor(max_workers=1)
         self.ai_future = None
         self.reset_game()
+
+        # Load game start video
+        intro = Video("images/game_start_intro.mp4")
+        intro.set_size((self.screen_width, self.screen_height))
+
+    def play_intro(self):
+        intro = Video("images/game_start_intro.mp4")
+        intro.set_size((self.screen_width, self.screen_height))
+        while True:
+            for event in p.event.get():
+                if event.type == p.QUIT:
+                    intro.close()
+                    p.quit()
+                    return
+            # Draw returns False when video is finished
+            still_playing = intro.draw(self.screen, (0, 0))
+            p.display.update()
+            self.clock.tick(30)
+            if not still_playing:
+                # Video ended naturally
+                intro.close()
+                return
 
     def reset_game(self):
         """Initialize new game: fresh board, clear UI state, set player modes."""
@@ -52,7 +77,7 @@ class ChessApp:
         self.sq_selected = ()  # Currently selected square (row, col)
         self.player_clicks = []  # Two-element list: [start_sq, end_sq]
         # Player modes: can be human (True) or AI (False)
-        self.player_one = True  # White player: human by default
+        self.player_one = False  # White player: human by default
         self.player_two = False  # Black player: AI by default
         # AI calculation state
         self.ai_thinking = False  # Flag: AI is calculating
@@ -60,13 +85,17 @@ class ChessApp:
         self.move_undone = False  # Flag: undo was just performed
 
     def load_images(self):
-        """Load and cache all piece images scaled to square size."""
+        """Load and cache all piece images scaled to square size and background image."""
         # All 12 piece types: white and black for each piece
         pieces = ["wp", "wN", "wB", "wR", "wQ", "wK", "bp", "bN", "bB", "bR", "bQ", "bK"]
         for piece in pieces:
-            image_file = os.path.join(IMAGE_PATH, piece + ".png")
+            image_file = os.path.join(self.IMAGE_PATH, piece + ".png")
             # Load image and scale to exact square size (64x64) for rendering
-            self.images[piece] = p.transform.scale(p.image.load(image_file), (SQ_SIZE, SQ_SIZE))
+            self.images[piece] = p.transform.scale(p.image.load(image_file), (self.SQ_SIZE, self.SQ_SIZE))
+        # Load background image
+        bg_path = os.path.join(os.path.dirname(__file__), "images", "game_background.png")
+        self.background = p.image.load(bg_path).convert()
+        self.background = p.transform.smoothscale(self.background, (self.screen_width, self.screen_height))
 
     def run(self):
         """Main game loop: process events, update state, render, and maintain frame rate."""
@@ -92,7 +121,7 @@ class ChessApp:
                 )
                 self.draw_end_game_text(game_over_text)
             # Frame rate control: cap at MAX_FPS
-            self.clock.tick(MAX_FPS)
+            self.clock.tick(self.MAX_FPS)
             p.display.flip()
 
     def handle_events(self):
@@ -114,15 +143,23 @@ class ChessApp:
         # Ignore clicks after game ends
         if self.game_over:
             return
-        # Convert pixel coordinates to board row/col
-        location = p.mouse.get_pos()
-        col = location[0] // SQ_SIZE
-        row = location[1] // SQ_SIZE
-        # Ignore clicks on move log panel (right side)
-        if col >= DIMENSION:
+        # Convert screen coordinates → board coordinates
+        mouse_x, mouse_y = p.mouse.get_pos()
+        x = mouse_x - self.BOARD_X
+        y = mouse_y - self.BOARD_Y
+        # Click outside board horizontally
+        if x < 0 or x >= self.BOARD_WIDTH:
             self.sq_selected = ()
             self.player_clicks = []
             return
+        # Click outside board vertically
+        if y < 0 or y >= self.BOARD_HEIGHT:
+            self.sq_selected = ()
+            self.player_clicks = []
+            return
+        # Convert to board row/col
+        col = x // self.SQ_SIZE
+        row = y // self.SQ_SIZE
         # Determine current player's color
         current_color = "w" if self.gs.whiteToMove else "b"
         # Clicking same square twice: deselect
@@ -234,6 +271,9 @@ class ChessApp:
             # Reset AI state for next turn
             self.ai_thinking = False
             self.ai_future = None
+            # Reset selected squares and player clicks
+            self.sq_selected = ()
+            self.player_clicks = []
 
     def update_after_move(self):
         """Update game state after a move: animate, recalculate legal moves."""
@@ -248,7 +288,8 @@ class ChessApp:
         self.move_undone = False
 
     def draw_game_state(self):
-        """Render entire game state: board, pieces, highlights, move log."""
+        """Render entire game state and background: board, pieces, highlights, move log."""
+        self.screen.blit(self.background, (0, 0)) # Draw background first
         self.draw_board()  # Draw 8x8 checkered board
         self.highlight_squares()  # Highlight selected square and legal moves
         self.draw_pieces()  # Draw all pieces on board
@@ -258,15 +299,15 @@ class ChessApp:
         """Draw 8x8 checkerboard pattern (alternating white and gray squares)."""
         colors = [p.Color("white"), p.Color("gray")]
         # Iterate through all board squares
-        for r in range(DIMENSION):
-            for c in range(DIMENSION):
+        for r in range(self.DIMENSION):
+            for c in range(self.DIMENSION):
                 # Alternate colors based on row+col (standard chess coloring)
                 color = colors[(r + c) % 2]
                 # Draw square as filled rectangle
                 p.draw.rect(
                     self.screen,
                     color,
-                    p.Rect(c * SQ_SIZE, r * SQ_SIZE, SQ_SIZE, SQ_SIZE),
+                    p.Rect(self.BOARD_X + c * self.SQ_SIZE, self.BOARD_Y + r * self.SQ_SIZE, self.SQ_SIZE, self.SQ_SIZE),
                 )
 
     def highlight_squares(self):
@@ -280,28 +321,28 @@ class ChessApp:
         if selected_piece is None or selected_piece.color != ("w" if self.gs.whiteToMove else "b"):
             return
         # Create semi-transparent overlay surface
-        s = p.Surface((SQ_SIZE, SQ_SIZE))
+        s = p.Surface((self.SQ_SIZE, self.SQ_SIZE))
         s.set_alpha(100)  # 100/255 opacity
         # Highlight selected square in blue
         s.fill(p.Color("blue"))
-        self.screen.blit(s, (c * SQ_SIZE, r * SQ_SIZE))
+        self.screen.blit(s, (self.BOARD_X + c * self.SQ_SIZE, self.BOARD_Y + r * self.SQ_SIZE))
         # Highlight all legal move destinations in yellow
         s.fill(p.Color("yellow"))
         for move in self.valid_moves:
             if move.startRow == r and move.startCol == c:
-                self.screen.blit(s, (move.endCol * SQ_SIZE, move.endRow * SQ_SIZE))
+                self.screen.blit(s, (self.BOARD_X + move.endCol * self.SQ_SIZE, self.BOARD_Y + move.endRow * self.SQ_SIZE))
 
     def draw_pieces(self):
         """Draw all pieces on board using cached piece images."""
         # Iterate through all board squares
-        for r in range(DIMENSION):
-            for c in range(DIMENSION):
+        for r in range(self.DIMENSION):
+            for c in range(self.DIMENSION):
                 piece = self.gs.board[r, c]
                 # Draw piece if square is occupied
                 if piece is not None:
                     self.screen.blit(
                         self.images[piece.code],  # Look up image by piece code (e.g., 'wp')
-                        p.Rect(c * SQ_SIZE, r * SQ_SIZE, SQ_SIZE, SQ_SIZE),
+                        p.Rect(self.BOARD_X + c * self.SQ_SIZE, self.BOARD_Y + r * self.SQ_SIZE, self.SQ_SIZE, self.SQ_SIZE),
                     )
 
     def animate_move(self, move):
@@ -309,8 +350,8 @@ class ChessApp:
         # Calculate distance and direction
         dR = move.endRow - move.startRow
         dC = move.endCol - move.startCol
-        # Animation parameters: 10 frames per square distance
-        frames_per_square = 10
+        # Animation parameters: 4 frames per square distance
+        frames_per_square = 4
         frame_count = (abs(dR) + abs(dC)) * frames_per_square
         # Interpolate position from start to end over frame_count frames
         for frame in range(frame_count + 1):
@@ -321,15 +362,15 @@ class ChessApp:
             self.draw_pieces()
             # Redraw destination square with correct board color
             end_color = p.Color("white") if (move.endRow + move.endCol) % 2 == 0 else p.Color("gray")
-            end_rect = p.Rect(move.endCol * SQ_SIZE, move.endRow * SQ_SIZE, SQ_SIZE, SQ_SIZE)
+            end_rect = p.Rect(self.BOARD_X + move.endCol * self.SQ_SIZE, self.BOARD_Y + move.endRow * self.SQ_SIZE, self.SQ_SIZE, self.SQ_SIZE)
             p.draw.rect(self.screen, end_color, end_rect)
             # Draw captured piece (for en passant, different square than destination)
             if move.pieceCaptured is not None:
                 capture_row = move.endRow if not move.isEnpassantMove else (move.endRow + 1 if move.pieceCaptured.color == "b" else move.endRow - 1)
-                capture_rect = p.Rect(move.endCol * SQ_SIZE, capture_row * SQ_SIZE, SQ_SIZE, SQ_SIZE)
+                capture_rect = p.Rect(self.BOARD_X + move.endCol * self.SQ_SIZE, self.BOARD_Y + capture_row * self.SQ_SIZE, self.SQ_SIZE, self.SQ_SIZE)
                 self.screen.blit(self.images[move.pieceCaptured.code], capture_rect)
             # Draw animating piece at interpolated position
-            self.screen.blit(self.images[move.pieceMoved.code], p.Rect(c * SQ_SIZE, r * SQ_SIZE, SQ_SIZE, SQ_SIZE))
+            self.screen.blit(self.images[move.pieceMoved.code], p.Rect(self.BOARD_X + c * self.SQ_SIZE, self.BOARD_Y + r * self.SQ_SIZE, self.SQ_SIZE, self.SQ_SIZE))
             p.display.flip()
             # High FPS for smooth animation
             self.clock.tick(120)
@@ -340,9 +381,9 @@ class ChessApp:
         font = p.font.SysFont("Helvetica", 32, True, False)
         text_object = font.render(text, True, p.Color("Gray"))
         # Center text on board
-        text_location = p.Rect(0, 0, BOARD_WIDTH, BOARD_HEIGHT).move(
-            BOARD_WIDTH / 2 - text_object.get_width() / 2,
-            BOARD_HEIGHT / 2 - text_object.get_height() / 2,
+        text_location = p.Rect(0, 0, self.BOARD_WIDTH, self.BOARD_HEIGHT).move(
+            self.BOARD_WIDTH / 2 - text_object.get_width() / 2,
+            self.BOARD_HEIGHT / 2 - text_object.get_height() / 2,
         )
         # Draw text twice: shadow offset, then main text
         self.screen.blit(text_object, text_location)
@@ -350,9 +391,8 @@ class ChessApp:
 
     def draw_move_log(self):
         """Display move history in right sidebar: pairs of moves numbered 1-N."""
-        # Draw black background for move log panel
-        move_log_rect = p.Rect(BOARD_WIDTH, 0, MOVE_LOG_PANEL_WIDTH, MOVE_LOG_PANEL_HEIGHT)
-        p.draw.rect(self.screen, p.Color("black"), move_log_rect)
+        # Draw bounding rectangle for move log panel
+        move_log_rect = p.Rect(self.BOARD_X + self.BOARD_WIDTH + 70, self.BOARD_Y + 15, self.MOVE_LOG_PANEL_WIDTH, self.MOVE_LOG_PANEL_HEIGHT)
         # Format moves: pair white and black moves with move number
         move_texts = []
         for i in range(0, len(self.gs.moveLog), 2):
@@ -360,19 +400,37 @@ class ChessApp:
             if i + 1 < len(self.gs.moveLog):
                 move_string += str(self.gs.moveLog[i + 1])  # Black's move (if exists)
             move_texts.append(move_string)
-        # Layout parameters: pack 3 moves per row to save space
+        move_texts = move_texts[-64:] # cap at 64 moves
+        # Layout parameters: pack 5 moves per row to save space
         padding = 5
         text_y = padding
-        line_spacing = 5
-        moves_per_row = 3
+        line_spacing = 10
+        moves_per_row = 4
         # Render moves in rows
         for i in range(0, len(move_texts), moves_per_row):
-            row_text = "  ".join(move_texts[i : i + moves_per_row])
-            text_object = self.move_log_font.render(row_text, True, p.Color("white"))
+            row_text = "      ".join(move_texts[i : i + moves_per_row])
+            text_object = self.move_log_font.render(row_text, True, p.Color("Gray"))
             self.screen.blit(text_object, move_log_rect.move(padding, text_y))
             text_y += text_object.get_height() + line_spacing
 
 
 # Entry point: create app and start main game loop
 if __name__ == "__main__":
-    ChessApp().run()
+    mode, color = run_menu()
+    app = ChessApp()
+
+    # Play intro ONCE before game starts
+    app.play_intro()
+
+    if mode == "pvp":
+        app.player_one = True   # White = human
+        app.player_two = True   # Black = human
+
+    elif mode == "pvai":
+        if color == "white":
+            app.player_one = True   # White = human
+            app.player_two = False  # Black = AI
+        elif color == "black":
+            app.player_one = False  # White = AI
+            app.player_two = True   # Black = human
+    app.run()
