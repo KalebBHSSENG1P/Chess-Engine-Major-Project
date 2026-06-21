@@ -19,6 +19,7 @@ class ChessApp:
     def __init__(self):
         # Initialize pygame and create game window
         p.init()
+        p.mixer.init()
         p.display.set_caption("Chess")
         self.screen = p.display.set_mode((0, 0), p.FULLSCREEN)
         self.screen_width, self.screen_height = self.screen.get_size()
@@ -45,6 +46,14 @@ class ChessApp:
         # Load game start video
         intro = Video("images/game_start_intro.mp4")
         intro.set_size((self.screen_width, self.screen_height))
+        
+        # Load sounds
+        self.sound_move = p.mixer.Sound("sounds/move.mp3")
+        self.sound_check = p.mixer.Sound("sounds/check.mp3")
+        self.sound_checkmate = p.mixer.Sound("sounds/checkmate.mp3")
+        self.sound_castle = p.mixer.Sound("sounds/castle.mp3")
+        self.sound_capture = p.mixer.Sound("sounds/capture.mp3")
+        self.sound_illegal = p.mixer.Sound("sounds/illegal.mp3")
 
     def play_intro(self):
         intro = Video("images/game_start_intro.mp4")
@@ -147,12 +156,12 @@ class ChessApp:
         mouse_x, mouse_y = p.mouse.get_pos()
         x = mouse_x - self.BOARD_X
         y = mouse_y - self.BOARD_Y
-        # Click outside board horizontally
+        # Detect clicks outside board horizontally
         if x < 0 or x >= self.BOARD_WIDTH:
             self.sq_selected = ()
             self.player_clicks = []
             return
-        # Click outside board vertically
+        # Detect clicks outside board vertically
         if y < 0 or y >= self.BOARD_HEIGHT:
             self.sq_selected = ()
             self.player_clicks = []
@@ -214,6 +223,7 @@ class ChessApp:
                 return
         # Move was invalid: keep first click, allow new destination
         self.player_clicks = [self.sq_selected]
+        self.sound_illegal.play()
 
     def undo_move(self):
         """Undo last move and reset game state for next turn."""
