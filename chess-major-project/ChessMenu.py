@@ -1,107 +1,165 @@
+"""
+Draws the main menu using pygame and runs transitions between menu and game.
+For videos to work, FFmpeg MUST be instantialized so pyvidplayer2 library can work.
+"""
+
 import pygame as p
 import sys
 import os
-from pyvidplayer import Video
+from pyvidplayer2 import Video
 from Debug import DEBUG
 
-def run_menu():
-    p.init()
+class Menu:
+    """Main menu application for game: manages animations for loading and beginning games as well."""
+    def __init__(self):
+        p.init()
+        p.mixer.init()
+        self.screen = p.display.set_mode((0, 0), p.FULLSCREEN)
+        self.width, self.height = self.screen.get_size()
+        self.clock = p.time.Clock()
+        # set default colour picked to white
+        self.selected_color = "white"
+        # load UI button sound
+        self.sound_button = p.mixer.Sound("sounds/menu_button.mp3")
+        # Play start-up intro
+        self.intro_played = False
 
-    # Fullscreen window
-    screen = p.display.set_mode((0, 0), p.FULLSCREEN)
-    width, height = screen.get_size()
+    def run_menu(self):
+        # Load background image
+        bg_path = os.path.join(os.path.dirname(__file__), "images", "menu_background.png")
+        background = p.image.load(bg_path).convert()
+        background = p.transform.smoothscale(background, (self.width, self.height))
+        # Load white selected button image
+        w_select_path = os.path.join(os.path.dirname(__file__), "images", "white_selected.png")
+        white_selected = p.image.load(w_select_path).convert()
+        white_selected = p.transform.smoothscale(white_selected, (self.width, self.height))
+        # Load black selected button image
+        b_select_path = os.path.join(os.path.dirname(__file__), "images", "black_selected.png")
+        black_selected = p.image.load(b_select_path).convert()
+        black_selected = p.transform.smoothscale(black_selected, (self.width, self.height))
 
-    # Load background image
-    bg_path = os.path.join(os.path.dirname(__file__), "images", "menu_background.png")
-    background = p.image.load(bg_path).convert()
-    background = p.transform.smoothscale(background, (width, height))
-    # Load white selected button image
-    w_select_path = os.path.join(os.path.dirname(__file__), "images", "white_selected.png")
-    white_selected = p.image.load(w_select_path).convert()
-    white_selected = p.transform.smoothscale(white_selected, (width, height))
-    # Load black selected button image
-    b_select_path = os.path.join(os.path.dirname(__file__), "images", "black_selected.png")
-    black_selected = p.image.load(b_select_path).convert()
-    black_selected = p.transform.smoothscale(black_selected, (width, height))
+        # Button settings
+        button_width = 800
+        button_height = 150
+        button_small_width = 350
 
-    # set default colour picked to white
-    selected_color = "white"
+        # centre bounding box to correct positions
+        pvp_rect   = p.Rect(0, 0, button_width, button_height); pvp_rect.center   = (635, 470)
+        pvai_rect  = p.Rect(0, 0, button_width, button_height); pvai_rect.center  = (635, 730)
+        white_rect = p.Rect(0, 0, button_small_width, button_height); white_rect.center = (415, 990)
+        black_rect = p.Rect(0, 0, button_small_width, button_height); black_rect.center = (865, 990)
+        exit_rect  = p.Rect(0, 0, button_width, button_height); exit_rect.center  = (635, 1250)
 
-    # Button settings
-    button_width = 800
-    button_height = 150
-    button_small_width = 350
+        # Load intro video
+        intro = Video("images/menu_intro.mp4") if not self.intro_played else None
 
-    # centre bounding box to correct positions
-    pvp_rect   = p.Rect(0, 0, button_width, button_height); pvp_rect.center   = (635, 470)
-    pvai_rect  = p.Rect(0, 0, button_width, button_height); pvai_rect.center  = (635, 730)
-    white_rect = p.Rect(0, 0, button_small_width, button_height); white_rect.center = (415, 990)
-    black_rect = p.Rect(0, 0, button_small_width, button_height); black_rect.center = (865, 990)
-    exit_rect  = p.Rect(0, 0, button_width, button_height); exit_rect.center  = (635, 1250)
-
-    # Load intro video
-    intro = Video("images/menu_intro.mp4")
-    intro.set_size((width, height))
-
-    # Begin main pygame loop for menu screen
-    while True:
-        for event in p.event.get():
-            if event.type == p.QUIT:
-                p.quit()
-                sys.exit()
-
-            if event.type == p.MOUSEBUTTONDOWN and not intro.active:
-                if pvp_rect.collidepoint(event.pos):
-                    return ("pvp", None)
-                if pvai_rect.collidepoint(event.pos):
-                    if selected_color == "white":
-                        return ("pvai", "white")
-                    elif selected_color == "black":
-                        return ("pvai", "black")
-                if white_rect.collidepoint(event.pos):
-                    selected_color = "white"
-                if black_rect.collidepoint(event.pos):
-                    screen.blit(background, (0, 0))
-                    selected_color = "black"
-                if exit_rect.collidepoint(event.pos):
+        # Begin main pygame loop for menu screen
+        while True:
+            for event in p.event.get():
+                if event.type == p.QUIT:
                     p.quit()
                     sys.exit()
+                if event.type == p.MOUSEBUTTONDOWN and (intro is None or not intro.active):
+                    # Return tuples to change self.player_one and self.player_two booleans in ChessApp
+                    if pvp_rect.collidepoint(event.pos): # self.player_one = True, self.player_two = True
+                        if self.selected_color == "white":
+                            return ("pvp", "white")
+                        elif self.selected_color == "black":
+                            return ("pvp", "black")
+                    if pvai_rect.collidepoint(event.pos):
+                        if self.selected_color == "white":
+                            return ("pvai", "white") # self.player_one = True, self.player_two = False
+                        elif self.selected_color == "black":
+                            return ("pvai", "black") # self.player_one = False, self.player_two = True
+                    # Set selected_colour string to selected colour of button
+                    if white_rect.collidepoint(event.pos):
+                        self.sound_button.play()
+                        self.selected_color = "white"
+                    if black_rect.collidepoint(event.pos):
+                        self.screen.blit(background, (0, 0))
+                        self.sound_button.play()
+                        self.selected_color = "black"
+                    # Exit game if button is clicked
+                    if exit_rect.collidepoint(event.pos):
+                        p.quit()
+                        sys.exit()
 
-            if event.type == p.KEYDOWN:
-                if event.key == p.K_ESCAPE:
-                    p.quit()
-                    sys.exit()
+            # If video is still playing, draw it
+            if intro is not None and intro.active:
+                intro.draw(self.screen, (0, 0))
+                if intro.frame_surf is not None:
+                    scaled_frame = p.transform.scale(intro.frame_surf, (self.width, self.height))
+                    self.screen.blit(scaled_frame, (0, 0)) # Draw the correctly resized video
+                p.display.update()
+                continue  # Skip drawing the menu until video ends
+            elif intro is not None and not intro.active:
+                intro.close()
+                self.intro_played = True # Mark intro played flag as true so the intro does not play again
+                intro = None
 
-        # If video is still playing, draw it
-        if intro.active:
-            intro.draw(screen, (0, 0))
-            p.display.update()
-            continue  # Skip drawing the menu until video ends
+            # check if debug switch is true in Debug.py
+            if DEBUG:
+                debug_color = (255, 0, 0, 120)  # semi‑transparent red
+            else:
+                debug_color = (255, 0, 0, 0)  # fully-transparent red
+            # Create a surface with alpha for transparency
+            overlay = p.Surface((button_width, button_height), p.SRCALPHA)
+            overlay_small = p.Surface((button_small_width, button_height), p.SRCALPHA)
+            overlay.fill(debug_color)
+            overlay_small.fill(debug_color)
 
-        # check if debug switch is true in Debug.py
-        if DEBUG:
-            debug_color = (255, 0, 0, 120)  # semi‑transparent red
-        else:
-            debug_color = (255, 0, 0, 0)  # fully-transparent red
-        # Create a surface with alpha for transparency
-        overlay = p.Surface((button_width, button_height), p.SRCALPHA)
-        overlay_small = p.Surface((button_small_width, button_height), p.SRCALPHA)
-        overlay.fill(debug_color)
-        overlay_small.fill(debug_color)
+            # Draw background menu
+            self.screen.blit(background, (0, 0))
 
-        # Draw background menu
-        screen.blit(background, (0, 0))
+            # Draw highlight around selected option
+            if self.selected_color == "white":
+                self.screen.blit(white_selected, (0, 0))
+            elif self.selected_color == "black":
+                self.screen.blit(black_selected, (0, 0))
 
-        # Draw highlight around selected option
-        if selected_color == "white":
-            screen.blit(white_selected, (0, 0))
-        elif selected_color == "black":
-            screen.blit(black_selected, (0, 0))
+            # Draw bounding boxes for all option buttons
+            self.screen.blit(overlay, pvp_rect)
+            self.screen.blit(overlay, pvai_rect)
+            self.screen.blit(overlay_small, white_rect)
+            self.screen.blit(overlay_small, black_rect)
+            self.screen.blit(overlay, exit_rect)
+            p.display.flip()
 
-        # Draw bounding boxes for all option buttons
-        screen.blit(overlay, pvp_rect)
-        screen.blit(overlay, pvai_rect)
-        screen.blit(overlay_small, white_rect)
-        screen.blit(overlay_small, black_rect)
-        screen.blit(overlay, exit_rect)
-        p.display.flip()
+    def play_intro(self):
+            # Initialize videos
+            intro = Video("images/game_start_intro.mp4")
+            intro2 = Video("images/game_start_intro_black.mp4")
+            while True:
+                for event in p.event.get():
+                    if event.type == p.QUIT:
+                        intro.close()
+                        p.quit()
+                        return
+                # Play intro (white POV) if self.player_one = True and self.player_two = False
+                if self.selected_color == "white":
+                    # Advance the video internal frame timer
+                    intro.draw(self.screen, (0, 0)) 
+                    # Resize the active frame surface to match screen dimensions
+                    if intro.frame_surf is not None:
+                        scaled_frame = p.transform.scale(intro.frame_surf, (self.width, self.height))
+                        self.screen.blit(scaled_frame, (0, 0)) # Draw the correctly resized video
+                    p.display.update()
+                    self.clock.tick(30)
+                    # Check if the video natural end is met, if so stop playing video
+                    if not intro.active:
+                        intro.close()
+                        return
+                # Play intro (black POV) if self.player_one == False and self.player_two == True
+                elif self.selected_color == "black":
+                    # Advance the video internal frame timer
+                    intro2.draw(self.screen, (0, 0)) 
+                    # Resize the active frame surface to match screen dimensions
+                    if intro2.frame_surf is not None:
+                        scaled_frame = p.transform.scale(intro2.frame_surf, (self.width, self.height))
+                        self.screen.blit(scaled_frame, (0, 0)) # Draw the correctly resized video
+                    p.display.update()
+                    self.clock.tick(30)
+                    # Check if the video natural end is met, if so stop playing video
+                    if not intro2.active:
+                        intro2.close()
+                        return

@@ -125,7 +125,7 @@ class ChessAI:
     # Search parameters and engine constants
     CHECKMATE = 1000  # Maximum score (one side has won)
     STALEMATE = 0  # No advantage (draw)
-    MAX_DEPTH = 4  # Maximum search depth
+    MAX_DEPTH = 3  # Maximum search depth
     TIME_LIMIT = 4  # Time limit for move search (seconds)
     
     # Optimization caches: transposition table stores evaluated positions
