@@ -30,25 +30,32 @@ class Menu:
         background = p.image.load(bg_path).convert()
         background = p.transform.smoothscale(background, (self.width, self.height))
         # Load white selected button image
-        w_select_path = os.path.join(os.path.dirname(__file__), "images", "white_selected.png")
+        w_select_path = os.path.join(os.path.dirname(__file__), "images", "selected_white.png")
         white_selected = p.image.load(w_select_path).convert()
         white_selected = p.transform.smoothscale(white_selected, (self.width, self.height))
         # Load black selected button image
-        b_select_path = os.path.join(os.path.dirname(__file__), "images", "black_selected.png")
+        b_select_path = os.path.join(os.path.dirname(__file__), "images", "selected_black.png")
         black_selected = p.image.load(b_select_path).convert()
         black_selected = p.transform.smoothscale(black_selected, (self.width, self.height))
 
         # Button settings
-        button_width = 800
-        button_height = 150
-        button_small_width = 350
+        # Scaling
+        button_width = int(self.width * 0.33)
+        button_height = int(self.height * 0.1)
+        button_small_width = int(self.width * 0.15)
+        # Positioning
+        button_x = int(self.width * 0.25)
+        button_y = int(self.height * 0.33)
+        # Spacing
+        gap_y = int(self.height * 0.18)
+        gap_x = int(self.width * 0.09)
 
         # centre bounding box to correct positions
-        pvp_rect   = p.Rect(0, 0, button_width, button_height); pvp_rect.center   = (635, 470)
-        pvai_rect  = p.Rect(0, 0, button_width, button_height); pvai_rect.center  = (635, 730)
-        white_rect = p.Rect(0, 0, button_small_width, button_height); white_rect.center = (415, 990)
-        black_rect = p.Rect(0, 0, button_small_width, button_height); black_rect.center = (865, 990)
-        exit_rect  = p.Rect(0, 0, button_width, button_height); exit_rect.center  = (635, 1250)
+        pvp_rect   = p.Rect(0, 0, button_width, button_height); pvp_rect.center   = (button_x, button_y)
+        pvai_rect  = p.Rect(0, 0, button_width, button_height); pvai_rect.center  = (button_x, button_y + gap_y)
+        white_rect = p.Rect(0, 0, button_small_width, button_height); white_rect.center = (button_x - gap_x, button_y + (gap_y * 2))
+        black_rect = p.Rect(0, 0, button_small_width, button_height); black_rect.center = (button_x + gap_x, button_y + (gap_y * 2))
+        exit_rect  = p.Rect(0, 0, button_width, button_height); exit_rect.center  = (button_x, button_y + (gap_y * 3))
 
         # Load intro video
         intro = Video("images/menu_intro.mp4") if not self.intro_played else None

@@ -25,24 +25,22 @@ class ChessApp:
         self.screen_width, self.screen_height = self.screen.get_size()
         self.clock = p.time.Clock()
         # Calculate size of board and move long panel
-        self.BOARD_HEIGHT = self.BOARD_WIDTH = round(self.screen_height * 0.85)
-        self.SQ_SIZE = self.BOARD_HEIGHT // 8
+        self.BOARD_HEIGHT = int(self.screen_height * 0.85)
+        self.SQ_SIZE = int(self.BOARD_HEIGHT) // 8
+        self.BOARD_HEIGHT = self.BOARD_WIDTH = self.SQ_SIZE * 8
         self.MOVE_LOG_PANEL_WIDTH = 815
         self.MOVE_LOG_PANEL_HEIGHT = 1200
         self.BOARD_Y = (self.screen_height - self.BOARD_HEIGHT) // 2
-        self.BOARD_X = 200
+        self.BOARD_X = int(self.screen_width * 0.08)
         self.DIMENSION = 8  # 8x8 chess board
         self.MAX_FPS = 15  # Frame rate cap for game loop
         self.IMAGE_PATH = os.path.join(os.path.dirname(__file__), "images")  # Path to piece images
-        # Load fonts
-        self.move_log_font = p.font.SysFont("impact", 35, False, False)
-        self.profile_name_font = p.font.SysFont("impact", 25, False, False)
-        self.pieces_captured_font = p.font.SysFont("Segoe UI Symbol", 32)
         # Run loading functions
         self.images = {}  # Dictionary to cache piece images
         self.load_images()
         self.load_sounds()
         self.load_buttons()
+        self.load_text()
         # Persistent single-worker executor for background AI moves
         self.ai_executor = ProcessPoolExecutor(max_workers=1)
         self.ai_future = None
@@ -80,14 +78,14 @@ class ChessApp:
         for piece in pieces:
             image_file = os.path.join(self.IMAGE_PATH, piece + ".png")
             # Load image and scale to exact square size (64x64) for rendering
-            self.images[piece] = p.transform.scale(p.image.load(image_file), (self.SQ_SIZE, self.SQ_SIZE))
+            self.images[piece] = p.transform.smoothscale(p.image.load(image_file), (self.SQ_SIZE, self.SQ_SIZE))
         # Load profile images
         p_ai_path = os.path.join(os.path.dirname(__file__), "images", "profile_ai.png")
         p_human_path  = os.path.join(os.path.dirname(__file__), "images", "profile_human.png")
         self.profile_ai = p.image.load(p_ai_path).convert_alpha()
         self.profile_human  = p.image.load(p_human_path).convert_alpha()
-        self.profile_ai = p.transform.smoothscale(self.profile_ai, (72, 72))
-        self.profile_human  = p.transform.smoothscale(self.profile_human, (72, 72))
+        self.profile_ai = p.transform.smoothscale(self.profile_ai, (int(self.screen_height * 0.06), int(self.screen_height * 0.06)))
+        self.profile_human  = p.transform.smoothscale(self.profile_human, (int(self.screen_height * 0.06), int(self.screen_height * 0.06)))
         # Load background image
         bg_path = os.path.join(os.path.dirname(__file__), "images", "game_background.png")
         self.background = p.image.load(bg_path).convert()
@@ -117,15 +115,31 @@ class ChessApp:
 
     def load_buttons(self):
         # Set button dimensions
-        button_width = 140
-        button_height = 60
-        button_x = self.screen_width - 500
-        button_y = self.screen_height - 100
-        # Instantiate buttons
-        self.undo_button = p.Rect(button_x - 490, button_y, button_width, button_height)
-        self.reset_button = p.Rect(button_x - 330, button_y, button_width, button_height)
-        self.menu_button  = p.Rect(button_x - 170, button_y, button_width, button_height)
+        button_width = int(self.screen_width * 0.055)
+        button_height = int(self.screen_height * 0.042)
+        # Set button positions
+        button_x = int(self.screen_width * 0.805)
+        button_y = int(self.screen_height * 0.932)
+        # Set gap position
+        button_gap = int(self.screen_width * 0.064)
+        # Load buttons
+        self.undo_button = p.Rect(button_x - (button_gap * 3), button_y, button_width, button_height)
+        self.reset_button = p.Rect(button_x - (button_gap * 2), button_y, button_width, button_height)
+        self.menu_button  = p.Rect(button_x - button_gap, button_y, button_width, button_height)
         self.exit_button  = p.Rect(button_x, button_y, button_width, button_height)
+        # Load button list for debugging
+        self.buttons = [self.undo_button, self.reset_button, self.menu_button, self.exit_button]
+
+    def load_text(self):
+        # Load fonts
+        self.move_log_font = p.font.SysFont("impact", int(self.screen_height * 0.03), False, False)
+        self.profile_name_font = p.font.SysFont("impact", int(self.screen_height * 0.025), False, False)
+        self.pieces_captured_font = p.font.SysFont("Segoe UI Symbol", int(self.screen_height * 0.03))
+        # Profile names
+        self.name_one = self.profile_name_font.render("Player 1", True, p.Color("Gray"))
+        self.name_two = self.profile_name_font.render("Player 2", True, p.Color("Gray"))
+        self.name_three = self.profile_name_font.render("AI", True, p.Color("Gray"))
+        self.name_four = self.profile_name_font.render("Player", True, p.Color("Gray"))
 
     def run(self):
         """Main game loop: process events, update state, render, and maintain frame rate."""
@@ -405,6 +419,7 @@ class ChessApp:
 
     def screen_to_board(self, mouse_x, mouse_y):
         """Convert screen pixel coordinates to board (row, col)"""
+        # Calculate x and y
         x = mouse_x - self.BOARD_X
         y = mouse_y - self.BOARD_Y
         # Detect clicks outside board
@@ -538,7 +553,7 @@ class ChessApp:
     def draw_move_log(self):
         """Display move history in right sidebar: pairs of moves numbered 1-N."""
         # Draw bounding rectangle for move log panel
-        move_log_rect = p.Rect(self.BOARD_X + self.BOARD_WIDTH + 70, self.BOARD_Y + 15, self.MOVE_LOG_PANEL_WIDTH, self.MOVE_LOG_PANEL_HEIGHT)
+        move_log_rect = p.Rect(self.BOARD_X + self.BOARD_WIDTH + int(self.screen_width * 0.022), self.BOARD_Y + int(self.screen_height * 0.01), self.MOVE_LOG_PANEL_WIDTH, self.MOVE_LOG_PANEL_HEIGHT)
         # Format moves: pair white and black moves with move number
         move_texts = []
         for i in range(0, len(self.gs.moveLog), 2):
@@ -546,12 +561,12 @@ class ChessApp:
             if i + 1 < len(self.gs.moveLog):
                 move_string += str(self.gs.moveLog[i + 1])  # Black's move (if exists)
             move_texts.append(move_string)
-        move_texts = move_texts[-64:] # cap at 64 moves
+        move_texts = move_texts[-60:] # cap at 60 moves
         # Layout parameters: pack 5 moves per row to save space
         padding = 5
         text_y = padding
         line_spacing = 10
-        moves_per_row = 4
+        moves_per_row = 3
         # Render moves in rows
         for i in range(0, len(move_texts), moves_per_row):
             row_text = "     ".join(move_texts[i : i + moves_per_row])
@@ -561,35 +576,33 @@ class ChessApp:
 
     def draw_elements(self):
         """Draw button bounding boxes, profiles, profile names and profile material"""
-        # Buttons list
-        buttons = [self.undo_button, self.reset_button, self.menu_button, self.exit_button]
-        # Profile names
-        name_one = self.profile_name_font.render("Player 1", True, p.Color("Gray"))
-        name_two = self.profile_name_font.render("Player 2", True, p.Color("Gray"))
-        name_three = self.profile_name_font.render("AI", True, p.Color("Gray"))
-        name_four = self.profile_name_font.render("Player", True, p.Color("Gray"))
         # If Debug is true, highlight buttons with a transparent red
         if DEBUG == True:
-            for rect in buttons:
+            for rect in self.buttons:
                 s = p.Surface((rect.width, rect.height), p.SRCALPHA)
                 s.fill((255, 0, 0, 120))  # transparent red
                 self.screen.blit(s, rect.topleft)
+        # Element positioning
+        x = self.BOARD_X
+        y = int(self.screen_height * 0.008)
+        x2 = x + int(self.screen_height * 0.08)
+        y2 = self.BOARD_HEIGHT + int((y * 12.7))
         # Draw profiles
         if self.player_one == True and self.player_two == True:
-            self.screen.blit(self.profile_human, (200, 20)) # Render human profile
+            self.screen.blit(self.profile_human, (x, y)) # Render human profile
         elif self.player_one == False or self.player_two == False:
-            self.screen.blit(self.profile_ai, (200, 20)) # Render AI profile
-        self.screen.blit(self.profile_human, (200, 1350)) # Render human profile, the user at the bottom will always be a human
+            self.screen.blit(self.profile_ai, (x, y)) # Render AI profile
+        self.screen.blit(self.profile_human, (x, y2)) # Render human profile, the user at the bottom will always be a human
         # Draw profile names
         if self.player_one == True and self.player_two == True and self.flip_board == False: # Two player game with white at the bottom
-            self.screen.blit(name_two, (280, 20))
-            self.screen.blit(name_one, (280, 1350))
+            self.screen.blit(self.name_two, (x2, y))
+            self.screen.blit(self.name_one, (x2, y2))
         elif self.player_one == True and self.player_two == True and self.flip_board == True: # Two player game with black at the bottom
-            self.screen.blit(name_one, (280, 20))
-            self.screen.blit(name_two, (280, 1350))
+            self.screen.blit(self.name_one, (x2, y))
+            self.screen.blit(self.name_two, (x2, y2))
         elif self.player_one == False or self.player_two == False: # Player vs AI
-            self.screen.blit(name_three, (280, 20))
-            self.screen.blit(name_four, (280, 1350))
+            self.screen.blit(self.name_three, (x2, y))
+            self.screen.blit(self.name_four, (x2, y2))
         # Draw captured pieces under profile names
         captured_white_pieces, captured_black_pieces = self.captured_pieces()
         # Top profile captured pieces
@@ -602,17 +615,17 @@ class ChessApp:
             display_top = captured_white_pieces
             display_bottom = captured_black_pieces
         # Draw top display
-        x = 280 # Dynamically change x so pieces do not overlap each other
+        piece_x = x2 # Dynamically change x so pieces do not overlap each other
         for u in display_top:
             surf = self.pieces_captured_font.render(u, True, p.Color("Gray58"))
-            self.screen.blit(surf, (x, 50))
-            x += surf.get_width() + 0.5
+            self.screen.blit(surf, (piece_x - int(self.screen_width * 0.005), y + int(self.screen_height * 0.025)))
+            piece_x += surf.get_width() + round(self.screen_width * 0.001, 2)
         # Draw bottom display
-        x = 280 # Dynamically change x so pieces do not overlap each other
+        piece_x = x2 # Dynamically change x so pieces do not overlap each other
         for u in display_bottom:
             surf = self.pieces_captured_font.render(u, True, p.Color("Gray58"))
-            self.screen.blit(surf, (x, 1380))
-            x += surf.get_width() + 0.5
+            self.screen.blit(surf, (piece_x - int(self.screen_width * 0.005), y2 + int(self.screen_height * 0.025)))
+            piece_x += surf.get_width() + round(self.screen_width * 0.001, 2)
 
     def captured_pieces(self):
         """ Return two lists of pieces captured by white and pieces captured by black """
