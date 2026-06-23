@@ -34,9 +34,7 @@ class ChessApp:
         self.BOARD_X = int(self.screen_width * 0.08)
         self.DIMENSION = 8  # 8x8 chess board
         self.MAX_FPS = 15  # Frame rate cap for game loop
-        self.IMAGE_PATH = os.path.join(os.path.dirname(__file__), "images")  # Path to piece images
         # Run loading functions
-        self.images = {}  # Dictionary to cache piece images
         self.load_images()
         self.load_sounds()
         self.load_buttons()
@@ -73,6 +71,8 @@ class ChessApp:
 
     def load_images(self):
         """Load and cache all piece images scaled to square size and background image."""
+        self.IMAGE_PATH = os.path.join(os.path.dirname(__file__), "images")  # Path to piece images
+        self.images = {}  # Dictionary to cache piece images
         # All 12 piece types: white and black for each piece
         pieces = ["wp", "wN", "wB", "wR", "wQ", "wK", "bp", "bN", "bB", "bR", "bQ", "bK"]
         for piece in pieces:
