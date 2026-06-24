@@ -93,6 +93,7 @@ class ChessApp:
         # Load profile images
         scale = (int(self.screen_height * 0.06), int(self.screen_height * 0.06))
         self.profile_ai = load(os.path.join(self.IMAGE_PATH, "profile_ai.png"), scale)
+        self.profile_ai_thinking = load(os.path.join(self.IMAGE_PATH, "profile_ai_thinking.png"), scale)
         self.profile_human = load(os.path.join(self.IMAGE_PATH, "profile_human.png"), scale)
         # Load background and overlays
         self.background = load(os.path.join(self.IMAGE_PATH, "game_background.png"), (self.screen_width, self.screen_height), alpha=False) # background image
@@ -140,6 +141,7 @@ class ChessApp:
         self.name_two = self.profile_name_font.render("Player 2", True, p.Color("Gray"))
         self.name_three = self.profile_name_font.render("AI", True, p.Color("Gray"))
         self.name_four = self.profile_name_font.render("Player", True, p.Color("Gray"))
+        self.name_five = self.profile_name_font.render("AI   (Thinking...)", True, p.Color("Gray"))
 
     def run(self):
         """Main game loop: process events, update state, render, and maintain frame rate."""
@@ -422,6 +424,7 @@ class ChessApp:
                 ai_move = None
             # Fallback to random move if AI failed, but only if moves are available
             if ai_move is None:
+                debug_print("AI Move failed, fallback move applied.")
                 if len(self.valid_moves) > 0:
                     ai_move = ChessAI.find_random_move(self.valid_moves)
                 else:
@@ -609,7 +612,7 @@ class ChessApp:
     def draw_move_log(self):
         """Display move history in right sidebar: pairs of moves numbered 1-N."""
         # Draw bounding rectangle for move log panel
-        move_log_rect = p.Rect(self.BOARD_X + self.BOARD_WIDTH + int(self.screen_width * 0.044), self.BOARD_Y + int(self.screen_height * 0.01), self.MOVE_LOG_PANEL_WIDTH, self.MOVE_LOG_PANEL_HEIGHT)
+        move_log_rect = p.Rect(self.BOARD_X + self.BOARD_WIDTH + int(self.screen_width * 0.022), self.BOARD_Y + int(self.screen_height * 0.01), self.MOVE_LOG_PANEL_WIDTH, self.MOVE_LOG_PANEL_HEIGHT)
         # Format moves: pair white and black moves with move number
         move_texts = []
         for i in range(0, len(self.gs.moveLog), 2):
@@ -625,7 +628,7 @@ class ChessApp:
         moves_per_row = 3
         # Render moves in rows
         for i in range(0, len(move_texts), moves_per_row):
-            row_text = "         ".join(move_texts[i : i + moves_per_row])
+            row_text = "      ".join(move_texts[i : i + moves_per_row])
             text_object = self.move_log_font.render(row_text, True, p.Color("Gray"))
             self.screen.blit(text_object, move_log_rect.move(padding, text_y))
             text_y += text_object.get_height() + line_spacing
@@ -647,7 +650,11 @@ class ChessApp:
         if self.player_one == True and self.player_two == True:
             self.screen.blit(self.profile_human, (x, y)) # Render human profile
         elif self.player_one == False or self.player_two == False:
-            self.screen.blit(self.profile_ai, (x, y)) # Render AI profile
+            # If AI is thinking, draw thinking profile
+            if self.ai_thinking:
+                self.screen.blit(self.profile_ai_thinking, (x, y))
+            else:
+                self.screen.blit(self.profile_ai, (x, y))
         self.screen.blit(self.profile_human, (x, y2)) # Render human profile, the user at the bottom will always be a human
         # Draw profile names
         if self.player_one == True and self.player_two == True and self.flip_board == False: # Two player game with white at the bottom
@@ -657,7 +664,11 @@ class ChessApp:
             self.screen.blit(self.name_one, (x2, y))
             self.screen.blit(self.name_two, (x2, y2))
         elif self.player_one == False or self.player_two == False: # Player vs AI
-            self.screen.blit(self.name_three, (x2, y))
+            # If AI is thinking, draw thinking name
+            if self.ai_thinking:
+                self.screen.blit(self.name_five, (x2, y))
+            else:
+                self.screen.blit(self.name_three, (x2, y))
             self.screen.blit(self.name_four, (x2, y2))
         # Draw captured pieces under profile names
         captured_white_pieces, captured_black_pieces = self.captured_pieces()

@@ -128,34 +128,55 @@ class GameState:
 
     def makeMove(self, move, is_temp = False):
         """Execute move: update board, track history, handle special moves, update game state."""
-        # Clear caches since board state is changing and cached values may no longer be valid
+        # Clear caches only on real moves and before move is made.
         if not is_temp:
             self.attack_cache.clear()
             self.cached_opp_moves = None
             self.cached_opp_turn = None
+        
+        # Save board states in temp move
+        if is_temp:
+            self._temp_move = move
+            self._temp_king_w = self.whiteKingLocation
+            self._temp_king_b = self.blackKingLocation
+            self._temp_enpassant = self.enpassantPossible
+            self._temp_castle = CastleRights(
+                self.currentCastlingRights.wks,
+                self.currentCastlingRights.bks,
+                self.currentCastlingRights.wqs,
+                self.currentCastlingRights.bqs,
+            )
+            self._temp_attack_cache = self.attack_cache
+            self._temp_cached_opp_moves = self.cached_opp_moves
+            self._temp_cached_opp_turn = self.cached_opp_turn
 
+        # Ensure move object has correct piece references
+        move.pieceMoved = self.board[move.startRow, move.startCol]
+        move.pieceCaptured = self.board[move.endRow, move.endCol]
         # Update board: remove piece from start, place at end
         self.board[move.startRow, move.startCol] = None
         self.board[move.endRow, move.endCol] = move.pieceMoved
-        # Record move in history for undo and game replay
+        # Record move in history for real moves only for undo and game replay
         if not is_temp:
+            # Log real moves only
             self.moveLog.append(move)
+
         # Switch player turn
         self.whiteToMove = not self.whiteToMove
-        
+
         # Update king location when king moves (needed for check detection and castling)
-        if move.pieceMoved.code == "wK":
+        if move.pieceMoved is not None and move.pieceMoved.code == "wK":
             self.whiteKingLocation = (move.endRow, move.endCol)
-        elif move.pieceMoved.code == "bK":
+        elif move.pieceMoved is not None and move.pieceMoved.code == "bK":
             self.blackKingLocation = (move.endRow, move.endCol)
         
         # Pawn promotion: convert pawn to chosen piece when reaching promotion rank
-        if move.isPawnPromotion:
-            if move.promote_to is not None:
+        if getattr(move, "isPawnPromotion", False):
+            if getattr(move, "promote_to", None) is not None:
                 self.board[move.endRow, move.endCol] = move.promote_to(move.pieceMoved.color)
         
         # En passant: remove captured pawn when moving diagonally with no target
-        if move.isEnpassantMove:
+        if getattr(move, "isEnpassantMove", False):
             self.board[move.startRow, move.endCol] = None
         
         # Update en passant availability: only for 2-square pawn advances
@@ -175,8 +196,8 @@ class GameState:
                 self.board[move.endRow, move.endCol + 1] = self.board[move.endRow, move.endCol - 2]
                 self.board[move.endRow, move.endCol - 2] = None
         
-        # Record en passant state in history for undo
         if not is_temp:
+            # Record en passant state in history for undo
             self.enpassantPossibleLog.append(self.enpassantPossible)
         # Update castling rights if king or rook moved
             self.updateCastleRights(move)
@@ -190,7 +211,7 @@ class GameState:
                 )
             )
         else:
-        # For temp moves, still update castling rights, but don't log
+        # For temp moves, still update castling rights, but do NOT log
             self.updateCastleRights(move)
 
 
@@ -227,7 +248,8 @@ class GameState:
             self.cached_opp_moves = getattr(self, "_temp_cached_opp_moves", self.cached_opp_moves)
             self.cached_opp_turn = getattr(self, "_temp_cached_opp_turn", self.cached_opp_turn)
             # Clean up temporary attributes to avoid outdated state
-            for attr in ("_temp_move", "_temp_enpassant", "_temp_castle", "_temp_king_w", "_temp_king_b"):
+            for attr in ("_temp_move", "_temp_enpassant", "_temp_castle", "_temp_king_w", "_temp_king_b",
+                         "_temp_attack_cache", "_temp_cached_opp_moves", "_temp_cached_opp_turn"):
                 if hasattr(self, attr):
                     delattr(self, attr)
             # Do NOT touch logs or caches and do not check checkmate/stalemate flags here\
@@ -235,22 +257,19 @@ class GameState:
             return
 
         # Safety check: don't undo if no moves have been made
-        if len(self.moveLog) != 0:
-            move = self.moveLog.pop()
+        if len(self.moveLog) == 0:
+            return
+        move = self.moveLog.pop()
         # Restore pieces to original squares
         self.board[move.startRow, move.startCol] = move.pieceMoved
         self.board[move.endRow, move.endCol] = move.pieceCaptured
         # Restore player turn
         self.whiteToMove = not self.whiteToMove            
         # Restore king positions when king has moved
-        if move.pieceMoved.code == "wK":
+        if move.pieceMoved is not None and move.pieceMoved.code == "wK":
             self.whiteKingLocation = (move.startRow, move.startCol)
-        elif move.pieceMoved.code == "bK":
+        elif move.pieceMoved is not None and move.pieceMoved.code == "bK":
             self.blackKingLocation = (move.startRow, move.startCol)
-         
-        # Clear check/checkmate/stalemate flags (will be recalculated if needed)
-        self.checkmate = False
-        self.stalemate = False
             
         # Reverse en passant: restore captured pawn to correct square
         if move.isEnpassantMove:
@@ -334,36 +353,28 @@ class GameState:
         # Iterate backwards to safely remove items while iterating
         for i in range(len(moves) - 1, -1, -1):
             move = moves[i]
-
-            # Save per-candidate state so temp undo can restore it exactly
-            self._temp_enpassant = self.enpassantPossible
-            self._temp_castle = CastleRights(
-                self.currentCastlingRights.wks,
-                self.currentCastlingRights.bks,
-                self.currentCastlingRights.wqs,
-                self.currentCastlingRights.bqs,
-            )
-            self._temp_king_w = self.whiteKingLocation
-            self._temp_king_b = self.blackKingLocation
-            # Save caches so temp moves don't mutate them
-            self._temp_attack_cache = self.attack_cache
-            self._temp_cached_opp_moves = self.cached_opp_moves
-            self._temp_cached_opp_turn = self.cached_opp_turn
             # Determine mover color before applying the temp move
             mover_color = "w" if self.whiteToMove else "b"
             opponent_color = "b" if mover_color == "w" else "w"
-            # Make temp move
-            self._temp_move = move
-            # Check whether the mover's king is attacked by the opponent
+            # Ensure pieceMove and pieceCaptured does not return as None
+            move.pieceMoved = self.board[move.startRow, move.startCol]
+            move.pieceCaptured = self.board[move.endRow, move.endCol]
+            
+            # Apply temp move on real board
+            self.makeMove(move, is_temp=True)
+
+            # Determine king location after the move (use temp positions)
             if mover_color == "w":
                 king_r, king_c = self.whiteKingLocation
             else:
                 king_r, king_c = self.blackKingLocation
-            # Store any illegal moves
-            illegal = self.squareUnderAttack(king_r, king_c, opponent_color)
+
+            # If the moved piece was the king, override king location on temp board
+            # Now test legality on the temp_board without using shared cache
+            illegal = self.squareUnderAttack(king_r, king_c, opponent_color, use_cache = False)
+
             # Undo temp move
-            self.undoMove(is_temp=True)
-            # Remove illegal moves
+            self.undoMove(is_temp = True)
             if illegal:
                 moves.remove(move)
                 
@@ -389,36 +400,44 @@ class GameState:
     def inCheck(self):
         """Check if current player's king is under attack."""
         if self.whiteToMove:
-            return self.squareUnderAttack(self.whiteKingLocation[0], self.whiteKingLocation[1], "b")
+            return self.squareUnderAttack(self.whiteKingLocation[0], self.whiteKingLocation[1], "b", use_cache = True)
         else:
-            return self.squareUnderAttack(self.blackKingLocation[0], self.blackKingLocation[1], "w")
+            return self.squareUnderAttack(self.blackKingLocation[0], self.blackKingLocation[1], "w", use_cache = True)
 
-    def squareUnderAttack(self, r, c, attacker_color=None):
+    def squareUnderAttack(self, r, c, attacker_color = None, use_cache = True):
         """
         Return True if square (r, c) is attacked by attacker_color.
-        If attacker_color is None, use the side opposite the current turn.
+        Changed to test attacks deterministically, rather than calling getAllPossibleMoves.
         """
         # Profiling start for squareUnderAttack
         t0 = prof_start("squareUnderAttack")
+
         # Determine attacker color if not provided
         if attacker_color is None:
             attacker_color = "w" if not self.whiteToMove else "b"
+
+        # Ensure cache exists
+        if not hasattr(self, "attack_cache") or self.attack_cache is None:
+            self.attack_cache = {}
         # Small cache keyed by (r, c, attacker_color)
         key = (r, c, attacker_color)
-        if key in self.attack_cache:
+        if use_cache and key in self.attack_cache:
             prof_end("squareUnderAttack", t0)
             return self.attack_cache[key]
+        
         # Pawn attacks
-        pawn_dir = -1 if attacker_color == "w" else 1
+        pawn_dir = -1 if attacker_color == "b" else 1
         pr = r + pawn_dir
         for dc in (-1, 1):
             pc = c + dc
             if 0 <= pr < 8 and 0 <= pc < 8:
                 p = self.board[pr, pc]
                 if p is not None and p.color == attacker_color and p.kind == "p":
-                    self.attack_cache[key] = True
+                    if use_cache:
+                        self.attack_cache[key] = True
                     prof_end("squareUnderAttack", t0)
                     return True
+        
         # Knight attacks
         knight_offsets = (
             (-2, -1), (-2, 1), (-1, -2), (-1, 2),
@@ -429,9 +448,11 @@ class GameState:
             if 0 <= rr < 8 and 0 <= cc < 8:
                 p = self.board[rr, cc]
                 if p is not None and p.color == attacker_color and p.kind == "N":
-                    self.attack_cache[key] = True
+                    if use_cache:
+                        self.attack_cache[key] = True
                     prof_end("squareUnderAttack", t0)
                     return True
+                
         # Diagonal attacks
         diag_dirs = ((-1, -1), (-1, 1), (1, -1), (1, 1))
         for dr, dc in diag_dirs:
@@ -443,10 +464,12 @@ class GameState:
                     cc += dc
                     continue
                 if p.color == attacker_color and (p.kind == "B" or p.kind == "Q"):
-                    self.attack_cache[key] = True
+                    if use_cache:
+                        self.attack_cache[key] = True
                     prof_end("squareUnderAttack", t0)
                     return True
                 break
+
         # Straight attacks
         ortho_dirs = ((-1, 0), (1, 0), (0, -1), (0, 1))
         for dr, dc in ortho_dirs:
@@ -458,11 +481,13 @@ class GameState:
                     cc += dc
                     continue
                 if p.color == attacker_color and (p.kind == "R" or p.kind == "Q"):
-                    self.attack_cache[key] = True
+                    if use_cache:
+                        self.attack_cache[key] = True
                     prof_end("squareUnderAttack", t0)
                     return True
                 break
-        # Adjacent attacks
+
+        # King attacks
         for dr in (-1, 0, 1):
             for dc in (-1, 0, 1):
                 if dr == 0 and dc == 0:
@@ -471,25 +496,14 @@ class GameState:
                 if 0 <= rr < 8 and 0 <= cc < 8:
                     p = self.board[rr, cc]
                     if p is not None and p.color == attacker_color and p.kind == "K":
-                        self.attack_cache[key] = True
+                        if use_cache:
+                            self.attack_cache[key] = True
                         prof_end("squareUnderAttack", t0)
                         return True
+        if use_cache:
+            self.attack_cache[key] = False
         # No attackers found
-        self.attack_cache[key] = False
         prof_end("squareUnderAttack", t0)
-        return False
-
-        # Opponent king adjacency
-        for dr in (-1, 0, 1):
-            for dc in (-1, 0, 1):
-                if dr == 0 and dc == 0:
-                    continue
-                rr, cc = r + dr, c + dc
-                if 0 <= rr < 8 and 0 <= cc < 8:
-                    p = self.board[rr, cc]
-                    if p is not None and p.color == attacker_color and p.kind == "K":
-                        return True
-
         return False
 
     def getAllPossibleMoves(self):
@@ -635,18 +649,19 @@ class GameState:
             endPiece = self.board[endRow, endCol]
             if endPiece is not None and endPiece.color == allyColor:
                 continue
-            # Temporarily move king on the board to test safety
+            # Save original pieces
             saved_src = self.board[r, c]
             saved_dest = self.board[endRow, endCol]
+            # Temporarily move king on the board to test safety
             self.board[r, c] = None
-            self.board[endRow, endCol] = King(allyColor)
-            # update king location for inCheck / attack helpers
+            self.board[endRow, endCol] = saved_src
+            # Update king location so helpers see the king at new destination
             if allyColor == "w":
                 self.whiteKingLocation = (endRow, endCol)
             else:
                 self.blackKingLocation = (endRow, endCol)
             # Check if this destination is attacked by enemy
-            attacked = self.squareUnderAttack(endRow, endCol, enemyColor)
+            attacked = self.squareUnderAttack(endRow, endCol, enemyColor, use_cache = False)
             # Restore board and king location
             self.board[r, c] = saved_src
             self.board[endRow, endCol] = saved_dest
@@ -661,7 +676,7 @@ class GameState:
     def getCastleMoves(self, r, c, moves):
         """Add castling moves if king not in check and has castling rights."""
         # Can't castle if in check
-        if self.squareUnderAttack(r, c):
+        if self.squareUnderAttack(r, c, use_cache = False):
             return
         # Check kingside (right) castling
         if (self.whiteToMove and self.currentCastlingRights.wks) or (
