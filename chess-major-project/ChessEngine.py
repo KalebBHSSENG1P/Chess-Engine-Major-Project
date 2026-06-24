@@ -2,6 +2,7 @@
 Chess game state management and move generation engine.
 Handles board representation, legal move generation, special moves (castling, en passant, promotion).
 Maintains move history and game state (checkmate, stalemate, check).
+ChessEngine.py originally coded by Eddie Sharick (2021), code copied and modified by Kaleb Vong (2026)
 """
 
 import numpy as np
@@ -125,18 +126,20 @@ class GameState:
             )
         ]
 
-    def makeMove(self, move):
+    def makeMove(self, move, is_temp = False):
         """Execute move: update board, track history, handle special moves, update game state."""
         # Clear caches since board state is changing and cached values may no longer be valid
-        self.attack_cache.clear()
-        self.cached_opp_moves = None
-        self.cached_opp_turn = None
+        if not is_temp:
+            self.attack_cache.clear()
+            self.cached_opp_moves = None
+            self.cached_opp_turn = None
 
         # Update board: remove piece from start, place at end
         self.board[move.startRow, move.startCol] = None
         self.board[move.endRow, move.endCol] = move.pieceMoved
         # Record move in history for undo and game replay
-        self.moveLog.append(move)
+        if not is_temp:
+            self.moveLog.append(move)
         # Switch player turn
         self.whiteToMove = not self.whiteToMove
         
@@ -146,9 +149,10 @@ class GameState:
         elif move.pieceMoved.code == "bK":
             self.blackKingLocation = (move.endRow, move.endCol)
         
-        # Pawn promotion: convert pawn to queen when reaching promotion rank
+        # Pawn promotion: convert pawn to chosen piece when reaching promotion rank
         if move.isPawnPromotion:
-            self.board[move.endRow, move.endCol] = Queen(move.pieceMoved.color)
+            if move.promote_to is not None:
+                self.board[move.endRow, move.endCol] = move.promote_to(move.pieceMoved.color)
         
         # En passant: remove captured pawn when moving diagonally with no target
         if move.isEnpassantMove:
@@ -172,74 +176,110 @@ class GameState:
                 self.board[move.endRow, move.endCol - 2] = None
         
         # Record en passant state in history for undo
-        self.enpassantPossibleLog.append(self.enpassantPossible)
+        if not is_temp:
+            self.enpassantPossibleLog.append(self.enpassantPossible)
         # Update castling rights if king or rook moved
-        self.updateCastleRights(move)
+            self.updateCastleRights(move)
         # Record castling rights in history for undo
-        self.castleRightLog.append(
-            CastleRights(
-                self.currentCastlingRights.wks,
-                self.currentCastlingRights.bks,
-                self.currentCastlingRights.wqs,
-                self.currentCastlingRights.bqs,
+            self.castleRightLog.append(
+                CastleRights(
+                    self.currentCastlingRights.wks,
+                    self.currentCastlingRights.bks,
+                    self.currentCastlingRights.wqs,
+                    self.currentCastlingRights.bqs,
+                )
             )
-        )
+        else:
+        # For temp moves, still update castling rights, but don't log
+            self.updateCastleRights(move)
 
 
-    def undoMove(self):
+    def undoMove(self, is_temp = False):
         """Reverse the last move: restore board, piece positions, game state, and castling rights."""
         # Clear caches since board state is changing and cached values may no longer be valid
-        self.attack_cache.clear()
-        self.cached_opp_moves = None
-        self.cached_opp_turn = None
+        if not is_temp:
+            self.attack_cache.clear()
+            self.cached_opp_moves = None
+            self.cached_opp_turn = None
+
+        # Lightweight temp undo (used by getValidMoves)
+        if is_temp:
+            # Expect the caller to have set self._temp_move before calling makeMove(..., is_temp=True)
+            move = getattr(self, "_temp_move", None)
+            if move is None:
+                # Defensive fallback: nothing to undo
+                return
+
+            # Restore pieces to original squares (lightweight)
+            self.board[move.startRow, move.startCol] = move.pieceMoved
+            self.board[move.endRow, move.endCol] = move.pieceCaptured
+
+            # Restore player turn
+            self.whiteToMove = not self.whiteToMove
+            # Restore king locations saved per-candidate (fall back to current values if missing)
+            self.whiteKingLocation = getattr(self, "_temp_king_w", self.whiteKingLocation)
+            self.blackKingLocation = getattr(self, "_temp_king_b", self.blackKingLocation)
+            # Restore en passant and castling rights saved per-candidate
+            self.enpassantPossible = getattr(self, "_temp_enpassant", self.enpassantPossible)
+            self.currentCastlingRights = getattr(self, "_temp_castle", self.currentCastlingRights)
+            # Restore caches saved per-candidate (do not clear them)
+            self.attack_cache = getattr(self, "_temp_attack_cache", self.attack_cache)
+            self.cached_opp_moves = getattr(self, "_temp_cached_opp_moves", self.cached_opp_moves)
+            self.cached_opp_turn = getattr(self, "_temp_cached_opp_turn", self.cached_opp_turn)
+            # Clean up temporary attributes to avoid outdated state
+            for attr in ("_temp_move", "_temp_enpassant", "_temp_castle", "_temp_king_w", "_temp_king_b"):
+                if hasattr(self, attr):
+                    delattr(self, attr)
+            # Do NOT touch logs or caches and do not check checkmate/stalemate flags here\
+            # This is what makes it LIGHTWEIGHT
+            return
 
         # Safety check: don't undo if no moves have been made
         if len(self.moveLog) != 0:
             move = self.moveLog.pop()
-            # Restore pieces to original squares
-            self.board[move.startRow, move.startCol] = move.pieceMoved
-            self.board[move.endRow, move.endCol] = move.pieceCaptured
-            # Restore player turn
-            self.whiteToMove = not self.whiteToMove
+        # Restore pieces to original squares
+        self.board[move.startRow, move.startCol] = move.pieceMoved
+        self.board[move.endRow, move.endCol] = move.pieceCaptured
+        # Restore player turn
+        self.whiteToMove = not self.whiteToMove            
+        # Restore king positions when king has moved
+        if move.pieceMoved.code == "wK":
+            self.whiteKingLocation = (move.startRow, move.startCol)
+        elif move.pieceMoved.code == "bK":
+            self.blackKingLocation = (move.startRow, move.startCol)
+         
+        # Clear check/checkmate/stalemate flags (will be recalculated if needed)
+        self.checkmate = False
+        self.stalemate = False
             
-            # Restore king positions when king has moved
-            if move.pieceMoved.code == "wK":
-                self.whiteKingLocation = (move.startRow, move.startCol)
-            elif move.pieceMoved.code == "bK":
-                self.blackKingLocation = (move.startRow, move.startCol)
+        # Reverse en passant: restore captured pawn to correct square
+        if move.isEnpassantMove:
+            self.board[move.endRow, move.endCol] = None
+            self.board[move.startRow, move.endCol] = move.pieceCaptured
             
-            # Clear check/checkmate/stalemate flags (will be recalculated if needed)
-            self.checkmate = False
-            self.stalemate = False
+        # Restore en passant state from history
+        self.enpassantPossibleLog.pop()
+        self.enpassantPossible = self.enpassantPossibleLog[-1]
             
-            # Reverse en passant: restore captured pawn to correct square
-            if move.isEnpassantMove:
-                self.board[move.endRow, move.endCol] = None
-                self.board[move.startRow, move.endCol] = move.pieceCaptured
+        # Restore castling rights from history
+        self.castleRightLog.pop()
+        newRights = self.castleRightLog[-1]
+        self.currentCastlingRights = CastleRights(
+            newRights.wks, newRights.bks, newRights.wqs, newRights.bqs
+        )
             
-            # Restore en passant state from history
-            self.enpassantPossibleLog.pop()
-            self.enpassantPossible = self.enpassantPossibleLog[-1]
+        # Reverse castling: restore rook to corner
+        if move.isCastleMove:
+            if move.endCol - move.startCol == 2:  # Kingside castling
+                self.board[move.endRow, move.endCol + 1] = self.board[move.endRow, move.endCol - 1]
+                self.board[move.endRow, move.endCol - 1] = None
+            elif (move.endCol - move.startCol == -2):  # Queenside castling
+                self.board[move.endRow, move.endCol - 2] = self.board[move.endRow, move.endCol + 1]
+                self.board[move.endRow, move.endCol + 1] = None
             
-            # Restore castling rights from history
-            self.castleRightLog.pop()
-            newRights = self.castleRightLog[-1]
-            self.currentCastlingRights = CastleRights(
-                newRights.wks, newRights.bks, newRights.wqs, newRights.bqs
-            )
-            
-            # Reverse castling: restore rook to corner
-            if move.isCastleMove:
-                if move.endCol - move.startCol == 2:  # Kingside castling
-                    self.board[move.endRow, move.endCol + 1] = self.board[move.endRow, move.endCol - 1]
-                    self.board[move.endRow, move.endCol - 1] = None
-                elif (move.endCol - move.startCol == -2):  # Queenside castling
-                    self.board[move.endRow, move.endCol - 2] = self.board[move.endRow, move.endCol + 1]
-                    self.board[move.endRow, move.endCol + 1] = None
-            
-            # Clear game end states
-            self.checkmate = False
-            self.stalemate = False
+        # Clear game end states
+        self.checkmate = False
+        self.stalemate = False
 
     def updateCastleRights(self, move):
         """Remove castling rights when king or rook moves, or when rook is captured."""
@@ -286,14 +326,6 @@ class GameState:
         """
         # Profiling start for getValidMoves
         t0 = prof_start("getValidMoves")
-        # Save current en passant and castling state to restore after validity check
-        tempEnpassantPossible = self.enpassantPossible
-        tempCastleRights = CastleRights(
-            self.currentCastlingRights.wks,
-            self.currentCastlingRights.bks,
-            self.currentCastlingRights.wqs,
-            self.currentCastlingRights.bqs,
-        )
         
         # Generate all pseudo-legal moves (ignoring check)
         moves = self.getAllPossibleMoves()
@@ -301,18 +333,40 @@ class GameState:
         # Filter out moves that leave own king in check
         # Iterate backwards to safely remove items while iterating
         for i in range(len(moves) - 1, -1, -1):
-            # Make move temporarily
-            self.makeMove(moves[i])
-            # Switch perspective to check if opponent attacks our king
-            self.whiteToMove = not self.whiteToMove
-            # If king is under attack, this move is illegal
-            if self.inCheck():
-                moves.remove(moves[i])
-            # Restore perspective
-            self.whiteToMove = not self.whiteToMove
-            # Undo temporary move
-            self.undoMove()
-        
+            move = moves[i]
+
+            # Save per-candidate state so temp undo can restore it exactly
+            self._temp_enpassant = self.enpassantPossible
+            self._temp_castle = CastleRights(
+                self.currentCastlingRights.wks,
+                self.currentCastlingRights.bks,
+                self.currentCastlingRights.wqs,
+                self.currentCastlingRights.bqs,
+            )
+            self._temp_king_w = self.whiteKingLocation
+            self._temp_king_b = self.blackKingLocation
+            # Save caches so temp moves don't mutate them
+            self._temp_attack_cache = self.attack_cache
+            self._temp_cached_opp_moves = self.cached_opp_moves
+            self._temp_cached_opp_turn = self.cached_opp_turn
+            # Determine mover color before applying the temp move
+            mover_color = "w" if self.whiteToMove else "b"
+            opponent_color = "b" if mover_color == "w" else "w"
+            # Make temp move
+            self._temp_move = move
+            # Check whether the mover's king is attacked by the opponent
+            if mover_color == "w":
+                king_r, king_c = self.whiteKingLocation
+            else:
+                king_r, king_c = self.blackKingLocation
+            # Store any illegal moves
+            illegal = self.squareUnderAttack(king_r, king_c, opponent_color)
+            # Undo temp move
+            self.undoMove(is_temp=True)
+            # Remove illegal moves
+            if illegal:
+                moves.remove(move)
+                
         # Detect checkmate (no legal moves and king in check)
         if len(moves) == 0:
             if self.inCheck():
@@ -322,62 +376,120 @@ class GameState:
         else:
             self.checkmate = False
             self.stalemate = False
-        
+                
         # Add castling moves if king hasn't moved
         if self.whiteToMove:
-            self.getCastleMoves(
-                self.whiteKingLocation[0], self.whiteKingLocation[1], moves
-            )
+            self.getCastleMoves(self.whiteKingLocation[0], self.whiteKingLocation[1], moves)
         else:
-            self.getCastleMoves(
-                self.blackKingLocation[0], self.blackKingLocation[1], moves
-            )
-        
-        # Restore temporary game state
-        self.enpassantPossible = tempEnpassantPossible
-        self.currentCastlingRights = tempCastleRights
+            self.getCastleMoves(self.blackKingLocation[0], self.blackKingLocation[1], moves)
+
         prof_end("getValidMoves", t0)
         return moves
 
     def inCheck(self):
         """Check if current player's king is under attack."""
         if self.whiteToMove:
-            return self.squareUnderAttack(
-                self.whiteKingLocation[0], self.whiteKingLocation[1]
-            )
+            return self.squareUnderAttack(self.whiteKingLocation[0], self.whiteKingLocation[1], "b")
         else:
-            return self.squareUnderAttack(
-                self.blackKingLocation[0], self.blackKingLocation[1]
-            )
+            return self.squareUnderAttack(self.blackKingLocation[0], self.blackKingLocation[1], "w")
 
-    def squareUnderAttack(self, r, c):
-        """Check if any opponent piece can attack square (r, c)."""
+    def squareUnderAttack(self, r, c, attacker_color=None):
+        """
+        Return True if square (r, c) is attacked by attacker_color.
+        If attacker_color is None, use the side opposite the current turn.
+        """
         # Profiling start for squareUnderAttack
         t0 = prof_start("squareUnderAttack")
-        # Check cache first to avoid redundant calculations
-        key = (r, c, self.whiteToMove)
+        # Determine attacker color if not provided
+        if attacker_color is None:
+            attacker_color = "w" if not self.whiteToMove else "b"
+        # Small cache keyed by (r, c, attacker_color)
+        key = (r, c, attacker_color)
         if key in self.attack_cache:
+            prof_end("squareUnderAttack", t0)
             return self.attack_cache[key]
-        # Temporarily switch to opponent's perspective
-        self.whiteToMove = not self.whiteToMove
-        # Check cache before generating all possible opponent moves
-        if self.cached_opp_moves is not None and self.cached_opp_turn == self.whiteToMove:
-            oppMoves = self.cached_opp_moves
-        # If nothing is cached, generate all possible opponent moves
-        else:
-            oppMoves = self.getAllPossibleMoves()
-            self.cached_opp_moves = oppMoves
-            self.cached_opp_turn = self.whiteToMove
-        # Switch back
-        self.whiteToMove = not self.whiteToMove
-        # Check if any opponent move attacks this square
-        for move in oppMoves:
-            if move.endRow == r and move.endCol == c:
-                self.attack_cache[key] = True
-                return True       
-        # No attacks found
+        # Pawn attacks
+        pawn_dir = -1 if attacker_color == "w" else 1
+        pr = r + pawn_dir
+        for dc in (-1, 1):
+            pc = c + dc
+            if 0 <= pr < 8 and 0 <= pc < 8:
+                p = self.board[pr, pc]
+                if p is not None and p.color == attacker_color and p.kind == "p":
+                    self.attack_cache[key] = True
+                    prof_end("squareUnderAttack", t0)
+                    return True
+        # Knight attacks
+        knight_offsets = (
+            (-2, -1), (-2, 1), (-1, -2), (-1, 2),
+            (1, -2), (1, 2), (2, -1), (2, 1),
+        )
+        for dr, dc in knight_offsets:
+            rr, cc = r + dr, c + dc
+            if 0 <= rr < 8 and 0 <= cc < 8:
+                p = self.board[rr, cc]
+                if p is not None and p.color == attacker_color and p.kind == "N":
+                    self.attack_cache[key] = True
+                    prof_end("squareUnderAttack", t0)
+                    return True
+        # Diagonal attacks
+        diag_dirs = ((-1, -1), (-1, 1), (1, -1), (1, 1))
+        for dr, dc in diag_dirs:
+            rr, cc = r + dr, c + dc
+            while 0 <= rr < 8 and 0 <= cc < 8:
+                p = self.board[rr, cc]
+                if p is None:
+                    rr += dr
+                    cc += dc
+                    continue
+                if p.color == attacker_color and (p.kind == "B" or p.kind == "Q"):
+                    self.attack_cache[key] = True
+                    prof_end("squareUnderAttack", t0)
+                    return True
+                break
+        # Straight attacks
+        ortho_dirs = ((-1, 0), (1, 0), (0, -1), (0, 1))
+        for dr, dc in ortho_dirs:
+            rr, cc = r + dr, c + dc
+            while 0 <= rr < 8 and 0 <= cc < 8:
+                p = self.board[rr, cc]
+                if p is None:
+                    rr += dr
+                    cc += dc
+                    continue
+                if p.color == attacker_color and (p.kind == "R" or p.kind == "Q"):
+                    self.attack_cache[key] = True
+                    prof_end("squareUnderAttack", t0)
+                    return True
+                break
+        # Adjacent attacks
+        for dr in (-1, 0, 1):
+            for dc in (-1, 0, 1):
+                if dr == 0 and dc == 0:
+                    continue
+                rr, cc = r + dr, c + dc
+                if 0 <= rr < 8 and 0 <= cc < 8:
+                    p = self.board[rr, cc]
+                    if p is not None and p.color == attacker_color and p.kind == "K":
+                        self.attack_cache[key] = True
+                        prof_end("squareUnderAttack", t0)
+                        return True
+        # No attackers found
         self.attack_cache[key] = False
         prof_end("squareUnderAttack", t0)
+        return False
+
+        # Opponent king adjacency
+        for dr in (-1, 0, 1):
+            for dc in (-1, 0, 1):
+                if dr == 0 and dc == 0:
+                    continue
+                rr, cc = r + dr, c + dc
+                if 0 <= rr < 8 and 0 <= cc < 8:
+                    p = self.board[rr, cc]
+                    if p is not None and p.color == attacker_color and p.kind == "K":
+                        return True
+
         return False
 
     def getAllPossibleMoves(self):
@@ -510,15 +622,41 @@ class GameState:
             (-1, -1), (-1, 1), (1, -1), (1, 1),
         )
         allyColor = "w" if self.whiteToMove else "b"
+        enemyColor = "b" if allyColor == "w" else "w"
+        original_king_pos = (r, c)
         # Check each adjacent square
         for dr, dc in kingMoves:
             endRow = r + dr
             endCol = c + dc
-            if 0 <= endRow < 8 and 0 <= endCol < 8:
-                endPiece = self.board[endRow, endCol]
-                # Can move to empty square or capture enemy piece
-                if endPiece is None or endPiece.color != allyColor:
-                    moves.append(Move((r, c), (endRow, endCol), self.board))
+             # Skip off-board squares
+            if not (0 <= endRow < 8 and 0 <= endCol < 8):
+                continue
+            # Skip squares occupied by our own piece
+            endPiece = self.board[endRow, endCol]
+            if endPiece is not None and endPiece.color == allyColor:
+                continue
+            # Temporarily move king on the board to test safety
+            saved_src = self.board[r, c]
+            saved_dest = self.board[endRow, endCol]
+            self.board[r, c] = None
+            self.board[endRow, endCol] = King(allyColor)
+            # update king location for inCheck / attack helpers
+            if allyColor == "w":
+                self.whiteKingLocation = (endRow, endCol)
+            else:
+                self.blackKingLocation = (endRow, endCol)
+            # Check if this destination is attacked by enemy
+            attacked = self.squareUnderAttack(endRow, endCol, enemyColor)
+            # Restore board and king location
+            self.board[r, c] = saved_src
+            self.board[endRow, endCol] = saved_dest
+            if allyColor == "w":
+                self.whiteKingLocation = original_king_pos
+            else:
+                self.blackKingLocation = original_king_pos
+            # Only add the move if the destination is not attacked
+            if not attacked:
+                moves.append(Move((r, c), (endRow, endCol), self.board))
 
     def getCastleMoves(self, r, c, moves):
         """Add castling moves if king not in check and has castling rights."""
@@ -583,6 +721,16 @@ class Move:
         # Piece information from board state
         self.pieceMoved = board[self.startRow, self.startCol]
         self.pieceCaptured = board[self.endRow, self.endCol]
+        # Store the board
+        self.board = board
+
+        # Store all same-type piece positions at move time for PGN support
+        self.sameTypePieceSquares = []
+        for r in range(8):
+            for c in range(8):
+                p = board[r, c]
+                if (p is not None and self.pieceMoved is not None and p.kind == self.pieceMoved.kind and p.color == self.pieceMoved.color):
+                    self.sameTypePieceSquares.append((r, c))
 
         # En passant: flag indicates captured pawn on different square
         self.isEnpassantMove = isEnpassantMove
@@ -599,6 +747,12 @@ class Move:
 
         # Capture detection: true if destination had enemy piece
         self.isCapture = self.pieceCaptured is not None
+
+        # Promotion choice detection: detect what piece the player has chosen to promote their pawn to
+        self.promote_to = None
+
+        # Allow for either "+" to be written if a move resulted in check or "#" if a move resulted in checkmate
+        self.postMoveSuffix = ""
 
         # Unique move identifier for transposition tables and killer move heuristic
         self.moveID = (
@@ -622,19 +776,79 @@ class Move:
         return self.colsToFiles[c] + self.rowsToRanks[r]
 
     def __str__(self):
-        """Return move notation: O-O (kingside), O-O-O (queenside), or piece notation."""
+        """Return move notation with PGN support: O-O (kingside), O-O-O (queenside), or piece notation."""
         if self.isCastleMove:
             return "O-O" if self.endCol == 6 else "O-O-O"
         # Destination square for all moves
         endSquare = self.getRankFile(self.endRow, self.endCol)
+        notation = ""
         # Pawn notation: just destination (or filex destination for captures)
         if self.pieceMoved.kind == "p":
+            # Capture notation
             if self.isCapture:
-                return self.colsToFiles[self.startCol] + "x" + endSquare
+                notation = self.colsToFiles[self.startCol] + "x" + endSquare
             else:
-                return endSquare
-        # Piece notation: piece symbol + x for captures + destination
-        moveString = self.pieceMoved.kind
+                notation = endSquare
+            # Promotion
+            if self.isPawnPromotion:
+                promoted_letter = {Queen: "Q", Rook: "R", Bishop: "B", Knight: "N"}.get(self.promote_to, "Q")
+                notation += "=" + promoted_letter
+            # Add "+" or "#" symbols if move led to check or checkmate respectively
+            return notation + self.postMoveSuffix
+        
+        # Default: no disambiguation
+        disambig = ""
+        # We need access to all legal moves from the same position.
+        # The Move object already stores the board, but not the GameState.
+        # So we detect disambiguation using the board directly.
+        # We search for other pieces of the same type that can also move to this square.
+        same_piece_moves = []
+        # Get snapshot of board and check for identical pieces
+        for (r, c) in self.sameTypePieceSquares:
+            if (r, c) == (self.startRow, self.startCol): # Iterate to next square if the same square is being checked
+                continue
+            # Store all possible moves by piece
+            if self.isValidForPGN(r, c):
+                same_piece_moves.append((r, c))
+        # Apply PGN disambiguation rules
+        if same_piece_moves:
+            same_file = any(c == self.startCol for (r, c) in same_piece_moves)
+            same_rank = any(r == self.startRow for (r, c) in same_piece_moves)
+            # Set disambig variable if detected
+            if same_file and same_rank:
+                disambig = self.colsToFiles[self.startCol] + self.rowsToRanks[self.startRow]
+            elif same_file:
+                disambig = self.rowsToRanks[self.startRow]
+            else:
+                disambig = self.colsToFiles[self.startCol]
+
+        # Piece notation: piece symbol + disambiguation (if any) + x for captures + destination
+        notation = self.pieceMoved.kind + disambig
         if self.isCapture:
-            moveString += "x"
-        return moveString + endSquare
+            notation += "x"
+        notation += endSquare
+        # Add "+" or "#" symbols if move led to check or checkmate respectively
+        return notation + self.postMoveSuffix
+    
+    def isValidForPGN(self, r, c):
+        """Check if this move matches the movement pattern of the piece."""
+        dr = self.endRow - r
+        dc = self.endCol - c
+        p = self.pieceMoved.kind
+
+        if p == "N":  # Knight
+            return (abs(dr), abs(dc)) in [(1, 2), (2, 1)]
+
+        if p == "B":  # Bishop
+            return abs(dr) == abs(dc)
+
+        if p == "R":  # Rook
+            return dr == 0 or dc == 0
+
+        if p == "Q":  # Queen
+            return dr == 0 or dc == 0 or abs(dr) == abs(dc)
+
+        if p == "K":  # King
+            return max(abs(dr), abs(dc)) == 1
+
+        return False

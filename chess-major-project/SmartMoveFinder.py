@@ -1,6 +1,7 @@
 ﻿"""
 Chess AI engine implementing negamax with alpha-beta pruning.
 Features: iterative deepening, transposition table, killer moves, quiescence search.
+SmartMoveFinder.py originally coded by Eddie Sharick (2021), code copied and modified by Kaleb Vong (2026)
 """
 import random
 import time
@@ -125,8 +126,8 @@ class ChessAI:
     # Search parameters and engine constants
     CHECKMATE = 1000  # Maximum score (one side has won)
     STALEMATE = 0  # No advantage (draw)
-    MAX_DEPTH = 3  # Maximum search depth
-    TIME_LIMIT = 4  # Time limit for move search (seconds)
+    MAX_DEPTH = 4  # Maximum search depth
+    TIME_LIMIT = 4 # Time limit for move search (seconds)
     
     # Optimization caches: transposition table stores evaluated positions
     killer_moves = {}  # Killer move heuristic for move ordering

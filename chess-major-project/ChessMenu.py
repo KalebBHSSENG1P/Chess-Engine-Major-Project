@@ -48,7 +48,7 @@ class Menu:
         button_y = int(self.height * 0.33)
         # Spacing
         gap_y = int(self.height * 0.18)
-        gap_x = int(self.width * 0.09)
+        gap_x = int(self.width * 0.085)
 
         # centre bounding box to correct positions
         pvp_rect   = p.Rect(0, 0, button_width, button_height); pvp_rect.center   = (button_x, button_y)

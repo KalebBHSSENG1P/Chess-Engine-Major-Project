@@ -1,13 +1,14 @@
 ﻿"""
 Main game driver: handles UI, game loop, user input, AI integration.
 Uses pygame for graphics and ProcessPoolExecutor for background AI calculation.
+ChessMain.py originally coded by Eddie Sharick (2021), code copied and modified by Kaleb Vong (2026)
 """
 
 import os
 import pygame as p
 from concurrent.futures import ProcessPoolExecutor
 
-from ChessEngine import GameState, Move
+from ChessEngine import GameState, Move, Queen, Rook, Bishop, Knight
 from SmartMoveFinder import ChessAI
 from pyvidplayer2 import Video
 
@@ -48,6 +49,9 @@ class ChessApp:
         self.player_two = None 
         self.flip_board = None # True for black pieces at the bottom, false for white pieces at the bottom
         self.game_not_ended = True
+        self.promotion_pending = None
+        # Set default value for redraw flag, improves performance
+        self.needs_redraw = True
 
     def reset_game(self):
         """Initialize new game: background, fresh board, clear UI state, set player modes."""
@@ -61,9 +65,11 @@ class ChessApp:
         self.move_made = False  # Trigger board update/animation
         self.animate = False  # Enable move animation
         self.game_over = False  # Prevent moves after checkmate/stalemate
+        self.promotion_pending = None # Remove promotion menu from promoting pawns
         # Move input: selected square and click coordinates
         self.sq_selected = ()  # Currently selected square (row, col)
         self.player_clicks = []  # Two-element list: [start_sq, end_sq]
+        self.needs_redraw = True
         # AI calculation state
         self.ai_thinking = False  # Flag: AI is calculating
         self.ai_future = None  # Future object for AI result
@@ -73,36 +79,29 @@ class ChessApp:
         """Load and cache all piece images scaled to square size and background image."""
         self.IMAGE_PATH = os.path.join(os.path.dirname(__file__), "images")  # Path to piece images
         self.images = {}  # Dictionary to cache piece images
+        # Small loader inline function to efficienity load all images. This function is called no-where else.
+        def load(path, scale = None, alpha = True):
+            img = p.image.load(path)
+            img = img.convert_alpha() if alpha else img.convert()
+            return p.transform.smoothscale(img, scale) if scale else img
         # All 12 piece types: white and black for each piece
-        pieces = ["wp", "wN", "wB", "wR", "wQ", "wK", "bp", "bN", "bB", "bR", "bQ", "bK"]
+        pieces = [c + k for c in ("w", "b") for k in ("p", "N", "B", "R", "Q", "K")]
         for piece in pieces:
             image_file = os.path.join(self.IMAGE_PATH, piece + ".png")
             # Load image and scale to exact square size (64x64) for rendering
-            self.images[piece] = p.transform.smoothscale(p.image.load(image_file), (self.SQ_SIZE, self.SQ_SIZE))
+            self.images[piece] = load(image_file, (self.SQ_SIZE, self.SQ_SIZE))
         # Load profile images
-        p_ai_path = os.path.join(os.path.dirname(__file__), "images", "profile_ai.png")
-        p_human_path  = os.path.join(os.path.dirname(__file__), "images", "profile_human.png")
-        self.profile_ai = p.image.load(p_ai_path).convert_alpha()
-        self.profile_human  = p.image.load(p_human_path).convert_alpha()
-        self.profile_ai = p.transform.smoothscale(self.profile_ai, (int(self.screen_height * 0.06), int(self.screen_height * 0.06)))
-        self.profile_human  = p.transform.smoothscale(self.profile_human, (int(self.screen_height * 0.06), int(self.screen_height * 0.06)))
-        # Load background image
-        bg_path = os.path.join(os.path.dirname(__file__), "images", "game_background.png")
-        self.background = p.image.load(bg_path).convert()
-        self.background = p.transform.smoothscale(self.background, (self.screen_width, self.screen_height))
-        # Load end game images
-        # Stalemate
-        stalemate_path = os.path.join(os.path.dirname(__file__), "images", "stalemate.png")
-        self.stalemate = p.image.load(stalemate_path).convert_alpha()
-        self.stalemate = p.transform.smoothscale(self.stalemate, (self.screen_width, self.screen_height))
-        # Black checkmate
-        bcheckmate_path = os.path.join(os.path.dirname(__file__), "images", "checkmate_black.png")
-        self.black_checkmate = p.image.load(bcheckmate_path).convert_alpha()
-        self.black_checkmate = p.transform.smoothscale(self.black_checkmate, (self.screen_width, self.screen_height))
-        # White checkmate
-        wcheckmate_path = os.path.join(os.path.dirname(__file__), "images", "checkmate_white.png")
-        self.white_checkmate = p.image.load(wcheckmate_path).convert_alpha()
-        self.white_checkmate = p.transform.smoothscale(self.white_checkmate, (self.screen_width, self.screen_height))
+        scale = (int(self.screen_height * 0.06), int(self.screen_height * 0.06))
+        self.profile_ai = load(os.path.join(self.IMAGE_PATH, "profile_ai.png"), scale)
+        self.profile_human = load(os.path.join(self.IMAGE_PATH, "profile_human.png"), scale)
+        # Load background and overlays
+        self.background = load(os.path.join(self.IMAGE_PATH, "game_background.png"), (self.screen_width, self.screen_height), alpha=False) # background image
+        self.stalemate = load(os.path.join(self.IMAGE_PATH, "stalemate.png"), (self.screen_width, self.screen_height)) # stalemate overlay
+        self.black_promotion = load(os.path.join(self.IMAGE_PATH, "promotion_black.png"), (int(self.screen_height * 0.25) , int(self.screen_height * 0.25))) # promotion ui for black
+        self.black_checkmate = load(os.path.join(self.IMAGE_PATH, "checkmate_black.png"), (self.screen_width, self.screen_height)) # checkmate overlay if black won
+        self.white_promotion = load(os.path.join(self.IMAGE_PATH, "promotion_white.png"), (int(self.screen_height * 0.25), int(self.screen_height * 0.25))) # promotion ui for white
+        self.white_checkmate = load(os.path.join(self.IMAGE_PATH, "checkmate_white.png"), (self.screen_width, self.screen_height)) # checkmate overlay if white won
+    
 
     def load_sounds(self):
         self.sound_move = p.mixer.Sound("sounds/move.mp3")
@@ -110,6 +109,7 @@ class ChessApp:
         self.sound_checkmate = p.mixer.Sound("sounds/checkmate.mp3")
         self.sound_castle = p.mixer.Sound("sounds/castle.mp3")
         self.sound_capture = p.mixer.Sound("sounds/capture.mp3")
+        self.sound_promote = p.mixer.Sound("sounds/promote.mp3")
         self.sound_illegal = p.mixer.Sound("sounds/illegal.mp3")
         self.sound_button = p.mixer.Sound("sounds/game_button.mp3")
 
@@ -127,7 +127,7 @@ class ChessApp:
         self.reset_button = p.Rect(button_x - (button_gap * 2), button_y, button_width, button_height)
         self.menu_button  = p.Rect(button_x - button_gap, button_y, button_width, button_height)
         self.exit_button  = p.Rect(button_x, button_y, button_width, button_height)
-        # Load button list for debugging
+        # Load button lists for highlighting when debugging is true
         self.buttons = [self.undo_button, self.reset_button, self.menu_button, self.exit_button]
 
     def load_text(self):
@@ -156,27 +156,30 @@ class ChessApp:
             # Check and execute AI move if not human's turn
             self.handle_ai_move()
             # Render board, pieces, and UI
-            self.draw_game_state()
+            if self.needs_redraw:
+                self.draw_game_state()
+                p.display.flip()
+                self.needs_redraw = False
             # Display end-game message and prevent further moves
-            if (self.gs.checkmate or self.gs.stalemate) and self.game_not_ended == True:
-                # Play sound
-                self.sound_checkmate.play()
-                # Set game_not_ended flag to False
-                self.game_not_ended = False
-            elif (self.gs.checkmate or self.gs.stalemate) and self.game_not_ended == False:
-                # Overlay stalemate image
-                if self.gs.stalemate:
-                    self.screen.blit(self.stalemate, (0, 0))
-                else:
-                    # Overlay black checkmate iamge
-                    if self.gs.whiteToMove:
-                        self.screen.blit(self.black_checkmate, (0, 0))
-                    # Overlay white checkmate image
+            if self.game_not_ended:
+                if (self.gs.checkmate or self.gs.stalemate) and self.game_not_ended == True:
+                    # Play sound
+                    self.sound_checkmate.play()
+                    # Overlay stalemate image
+                    if self.gs.stalemate:
+                        self.screen.blit(self.stalemate, (0, 0))
                     else:
-                        self.screen.blit(self.white_checkmate, (0, 0))
+                        # Overlay black checkmate iamge
+                        if self.gs.whiteToMove:
+                            self.screen.blit(self.black_checkmate, (0, 0))
+                        # Overlay white checkmate image
+                        else:
+                            self.screen.blit(self.white_checkmate, (0, 0))
+                    p.display.flip()
+                    # Set game_not_ended flag to False
+                    self.game_not_ended = False
             # Frame rate control: cap at MAX_FPS
             self.clock.tick(self.MAX_FPS)
-            p.display.flip()
 
     def handle_events(self):
         """Process pygame events: quit, mouse clicks, keyboard input."""
@@ -206,6 +209,22 @@ class ChessApp:
             return "menu"
         if result is not None:
             return # A button was clicked but it was not the menu button
+        # Check is there is any piece promoting
+        if self.promotion_pending:
+            chosen = self.promotion((mouse_x, mouse_y))
+            if chosen:
+                move = self.promotion_pending
+                move.promote_to = chosen
+                # finalize promotion
+                self.gs.undoMove()
+                self.gs.makeMove(move)
+                # Reset flags
+                self.promotion_pending = None
+                self.sq_selected = ()
+                self.player_clicks = []
+                self.move_made = True
+                self.needs_redraw = True
+            return  # IMPORTANT: do NOT process board clicks
         # Ignore clicks after game ends
         if self.game_over:
             return
@@ -215,6 +234,7 @@ class ChessApp:
         if board_pos is None:
             self.sq_selected = ()
             self.player_clicks = []
+            self.needs_redraw = True
             return
         # Set rows and columns
         row, col = board_pos
@@ -224,6 +244,7 @@ class ChessApp:
         if self.sq_selected == (row, col):
             self.sq_selected = ()
             self.player_clicks = []
+            self.needs_redraw = True
         else:
             # First click: must be player's own piece
             if len(self.player_clicks) == 0:
@@ -233,6 +254,7 @@ class ChessApp:
             # Record click and update selection
             self.sq_selected = (row, col)
             self.player_clicks.append(self.sq_selected)
+            self.needs_redraw = True
         # Two-click move: validate and execute if legal
         if len(self.player_clicks) == 2 and self.human_turn():
             self.try_player_move()
@@ -300,7 +322,7 @@ class ChessApp:
             return
         # Promotion
         if move.isPawnPromotion:
-            self.sound_move.play()
+            self.sound_promote.play()
             return
         # En passant
         if move.isEnpassantMove:
@@ -321,16 +343,28 @@ class ChessApp:
             # Starting square is now empty: reset and abort
             self.sq_selected = ()
             self.player_clicks = []
+            self.needs_redraw = True
             return
         # Create move object from click coordinates
         move = Move(self.player_clicks[0], self.player_clicks[1], self.gs.board)
         # Check if move matches any legal move
         for valid_move in self.valid_moves:
             if move == valid_move:
+                # Check if the move was a pawn promotion
+                if valid_move.isPawnPromotion and self.human_turn():
+                    # Graphically move the pawn, but DO NOT finish the move
+                    self.gs.makeMove(valid_move)
+                    self.move_made = True
+                    self.animate = True
+                    self.needs_redraw = True
+                    # Store the move
+                    self.promotion_pending = valid_move
+                    return
                 # Execute move, trigger UI update/animation, play sound
                 self.gs.makeMove(valid_move)
                 self.move_made = True
                 self.animate = True
+                self.needs_redraw = True
                 self.handle_sounds(valid_move)
                 # Reset selection state
                 self.sq_selected = ()
@@ -353,9 +387,12 @@ class ChessApp:
         # Trigger board update (will recalculate valid moves)
         self.move_made = True
         self.animate = False  # No animation on undo
+        self.needs_redraw = True
         # Clear game-over state and game-over flag to allow continued play
         self.game_over = False
         self.game_not_ended = True
+        # Remove promotion menu from promoting pawns
+        self.promotion_pending = None
         # Cancel AI calculation if in progress
         if self.ai_thinking and self.ai_future is not None:
             self.ai_thinking = False
@@ -393,10 +430,14 @@ class ChessApp:
                     self.ai_thinking = False
                     self.ai_future = None
                     return
+            # Make AI always promote to a queen
+            if ai_move.isPawnPromotion:
+                ai_move.promote_to = Queen
             # Execute AI move on board
             self.gs.makeMove(ai_move)
             self.move_made = True  # Trigger board update
             self.animate = True  # Show animation
+            self.needs_redraw = True
             self.handle_sounds(ai_move) # Play sound
             # Reset AI state for next turn
             self.ai_thinking = False
@@ -412,10 +453,20 @@ class ChessApp:
             self.animate_move(self.gs.moveLog[-1])
         # Recalculate legal moves for next player
         self.valid_moves = self.gs.getValidMoves()
+        # Assign + or # to the move that was just made
+        if self.gs.moveLog:
+            last_move = self.gs.moveLog[-1]
+            if self.gs.checkmate:
+                last_move.postMoveSuffix = "#"
+            elif self.gs.inCheck():
+                last_move.postMoveSuffix = "+"
+            else:
+                last_move.postMoveSuffix = ""
         # Reset state flags for next iteration
         self.move_made = False
         self.animate = False
         self.move_undone = False
+        self.needs_redraw = True
 
     def screen_to_board(self, mouse_x, mouse_y):
         """Convert screen pixel coordinates to board (row, col)"""
@@ -450,13 +501,18 @@ class ChessApp:
 
     def draw_game_state(self):
         """Render entire game state and background: board, pieces, highlights, move log."""
-        self.screen.blit(self.background, (0, 0)) # Draw background first
+        # Draw background first
+        self.screen.blit(self.background, (0, 0))
+        # Draw all elements in front
         self.draw_board()  # Draw 8x8 checkered board
         self.highlight_squares()  # Highlight selected square and legal moves
         self.draw_pieces()  # Draw all pieces on board
         self.draw_move_log()  # Draw move history in right panel
         self.draw_elements() # Draw button boundaries and player/AI profile icons
         self.captured_pieces() # Track a list of captured pieces to display beside profile icon
+        # If a piece is promoting, overlay the promotion menu over all elements
+        if self.promotion_pending:
+            self.draw_promotion_ui()
 
     def draw_board(self):
         """Draw 8x8 checkerboard pattern (alternating white and gray squares)."""
@@ -553,7 +609,7 @@ class ChessApp:
     def draw_move_log(self):
         """Display move history in right sidebar: pairs of moves numbered 1-N."""
         # Draw bounding rectangle for move log panel
-        move_log_rect = p.Rect(self.BOARD_X + self.BOARD_WIDTH + int(self.screen_width * 0.022), self.BOARD_Y + int(self.screen_height * 0.01), self.MOVE_LOG_PANEL_WIDTH, self.MOVE_LOG_PANEL_HEIGHT)
+        move_log_rect = p.Rect(self.BOARD_X + self.BOARD_WIDTH + int(self.screen_width * 0.044), self.BOARD_Y + int(self.screen_height * 0.01), self.MOVE_LOG_PANEL_WIDTH, self.MOVE_LOG_PANEL_HEIGHT)
         # Format moves: pair white and black moves with move number
         move_texts = []
         for i in range(0, len(self.gs.moveLog), 2):
@@ -562,14 +618,14 @@ class ChessApp:
                 move_string += str(self.gs.moveLog[i + 1])  # Black's move (if exists)
             move_texts.append(move_string)
         move_texts = move_texts[-60:] # cap at 60 moves
-        # Layout parameters: pack 5 moves per row to save space
+        # Layout parameters: pack 3 moves per row to save space
         padding = 5
         text_y = padding
         line_spacing = 10
         moves_per_row = 3
         # Render moves in rows
         for i in range(0, len(move_texts), moves_per_row):
-            row_text = "     ".join(move_texts[i : i + moves_per_row])
+            row_text = "         ".join(move_texts[i : i + moves_per_row])
             text_object = self.move_log_font.render(row_text, True, p.Color("Gray"))
             self.screen.blit(text_object, move_log_rect.move(padding, text_y))
             text_y += text_object.get_height() + line_spacing
@@ -586,7 +642,7 @@ class ChessApp:
         x = self.BOARD_X
         y = int(self.screen_height * 0.008)
         x2 = x + int(self.screen_height * 0.08)
-        y2 = self.BOARD_HEIGHT + int((y * 12.7))
+        y2 = self.BOARD_HEIGHT + int(y + (self.screen_height * 0.08))
         # Draw profiles
         if self.player_one == True and self.player_two == True:
             self.screen.blit(self.profile_human, (x, y)) # Render human profile
@@ -615,13 +671,13 @@ class ChessApp:
             display_top = captured_white_pieces
             display_bottom = captured_black_pieces
         # Draw top display
-        piece_x = x2 # Dynamically change x so pieces do not overlap each other
+        piece_x = x2 # Dynamically change piece_x so pieces do not overlap each other
         for u in display_top:
             surf = self.pieces_captured_font.render(u, True, p.Color("Gray58"))
             self.screen.blit(surf, (piece_x - int(self.screen_width * 0.005), y + int(self.screen_height * 0.025)))
             piece_x += surf.get_width() + round(self.screen_width * 0.001, 2)
         # Draw bottom display
-        piece_x = x2 # Dynamically change x so pieces do not overlap each other
+        piece_x = x2 # Dynamically change piece_x so pieces do not overlap each other
         for u in display_bottom:
             surf = self.pieces_captured_font.render(u, True, p.Color("Gray58"))
             self.screen.blit(surf, (piece_x - int(self.screen_width * 0.005), y2 + int(self.screen_height * 0.025)))
@@ -654,7 +710,62 @@ class ChessApp:
         captured_white_pieces.sort(key=lambda x: x[0])
         # Return lists of unicode chess characters
         return [u for _, u in captured_white_pieces], [u for _, u in captured_black_pieces]
-
+    
+    def promotion(self, pos):
+        if self.queen.collidepoint(pos):
+            self.sound_promote.play()
+            return Queen
+        if self.rook.collidepoint(pos):
+            self.sound_promote.play()
+            return Rook
+        if self.bishop.collidepoint(pos):
+            self.sound_promote.play()
+            return Bishop
+        if self.knight.collidepoint(pos):
+            self.sound_promote.play()
+            return Knight
+        return None
+    
+    def draw_promotion_ui(self):
+        """Display a small menu over the promoting pawn and return the chosen piece class."""
+        move = self.promotion_pending
+        row = move.endRow
+        col = move.endCol
+        color = move.pieceMoved.color  # "w" or "b"
+        # Calculate position to display menu
+        x, y = self.board_to_screen(row, col)
+        centre_x = x - (self.SQ_SIZE // 1.5) # Centre image to square centre
+        y2 = y - (self.SQ_SIZE * 1.25) # Move image to display above square
+        # Calculate size of bounding boxes for promotion choices
+        button_width = button_height = int(self.SQ_SIZE // 2)
+        # Calculate position of bounding boxes for promotion choices
+        offset_x = int(self.SQ_SIZE // 1.8)
+        offset_y = int(self.SQ_SIZE // 2.9)
+        button_x = centre_x + int(self.SQ_SIZE // 12)
+        # Display menu
+        if color == "w" and not self.flip_board:
+            button_y = y - offset_y
+            self.screen.blit(self.white_promotion, (centre_x, y2))
+        elif color == "b" and not self.flip_board:
+            button_y = y + (offset_y * 2.7)
+            self.screen.blit(self.black_promotion, (centre_x, y))
+        if color == "w" and self.flip_board:
+            button_y = y + (offset_y * 2.7)
+            self.screen.blit(self.white_promotion, (centre_x, y))
+        elif color == "b" and self.flip_board:
+            button_y = y - offset_y
+            self.screen.blit(self.black_promotion, (centre_x, y2))
+        # Load bounding boxes for promotion choices
+        self.queen = p.Rect(button_x, button_y, button_width, button_height)
+        self.rook  = p.Rect(button_x + offset_x, button_y, button_width, button_height)
+        self.bishop  = p.Rect(button_x + (offset_x * 2), button_y, button_width, button_height)
+        self.knight  = p.Rect(button_x + (offset_x * 3), button_y, button_width, button_height)
+        for rect in [self.queen, self.rook, self.bishop, self.knight]:
+            # Draw buttons
+            s = p.Surface((rect.width, rect.height), p.SRCALPHA)
+            if DEBUG == True: # Highlight bounding boxes for buttons when debugging mode is on
+                s.fill((255, 0, 0, 120))  # transparent red
+            self.screen.blit(s, rect.topleft)
 
 
 # Entry point: create app and start main game loop
