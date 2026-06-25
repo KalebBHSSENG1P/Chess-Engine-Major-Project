@@ -420,7 +420,7 @@ class ChessApp:
             # Retrieve result with error handling
             try:
                 ai_move = self.ai_future.result()
-            except:
+            except Exception:
                 ai_move = None
             # Fallback to random move if AI failed, but only if moves are available
             if ai_move is None:
