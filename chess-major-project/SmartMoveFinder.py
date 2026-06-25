@@ -300,6 +300,7 @@ class ChessAI:
         opponent_color = "b" if gs.whiteToMove else "w"
 
         # make a temp move so caches are preserved and state is restored cleanly
+        king_was_in_check = gs.inCheck()
         gs.makeMove(move, is_temp = True)
         try:
             dest_square_attacked = gs.squareUnderAttack(move.endRow, move.endCol, attacker_color=opponent_color, use_cache=False)
@@ -368,11 +369,10 @@ class ChessAI:
                     quality += threats_removed * 0.8
             
             # Check blocking preference: prefer blocking check with non-king pieces over moving king
-            if move.pieceMoved.kind != "K":
-                king_still_in_check = gs.inCheck()
-                # Strong bonus for blocking check without moving king
-                if not king_still_in_check:
-                    quality += 3.5
+            king_still_in_check = gs.inCheck()
+            # Strong bonus for blocking check without moving king
+            if king_was_in_check and not king_still_in_check and move.pieceMoved.kind != "K":
+                quality += 3.5
             
             # Piece safety: dynamic bonus for moving any piece under attack to safety
             # Bonus scales with piece value: queen gets biggest bonus, pawns smallest
