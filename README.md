@@ -18,4 +18,4 @@ An authentic student attempt at creating a polished chess program and chess engi
 2. Install FFmpeg program (includes FFprobe) via the [official website](https://www.ffmpeg.org/).
 3. Add the FFmpeg bin folder location to the PATH environment variable (there's plenty of tutorials online for this).
 4. Navigate to the download or cloned repository and extract it
-5. Run the program via an IDE or the `run.bat` file
+5. Run the program via an IDE or the `chess_engine.exe` file
