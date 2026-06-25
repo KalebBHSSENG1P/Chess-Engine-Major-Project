@@ -424,7 +424,10 @@ class ChessApp:
                 ai_move = None
             # Fallback to random move if AI failed, but only if moves are available
             if ai_move is None:
-                debug_print("AI Move failed, fallback move applied.")
+                if DEBUG:
+                    debug_print("AI Move failed, fallback move applied.")
+                else:
+                    pass
                 if len(self.valid_moves) > 0:
                     ai_move = ChessAI.find_random_move(self.valid_moves)
                 else:
