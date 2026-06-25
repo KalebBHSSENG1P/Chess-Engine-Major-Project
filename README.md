@@ -1,5 +1,5 @@
 # Chess-Engine-Major-Project
-An authentic student attempt at creating a polished chess program and chess engine with its own custom AI to play against. Built with Python, Pygame and Pyvidplayer libraries. Created by Kaleb Vong 12SENG1 with aid from the [online tutorials](https://www.youtube.com/playlist?list=PLBwF487qi8MGU81nDGaeNE1EnNEPYWKY_) by Eddie Sharick and [Artificial Intelligence](https://copilot.microsoft.com/)
+An authentic student attempt at creating a polished chess program and chess engine with its own custom AI to play against. Built with Python, Pygame and Pyvidplayer2 libraries. Created by Kaleb Vong 12SENG1 with aid from the [online tutorials](https://www.youtube.com/playlist?list=PLBwF487qi8MGU81nDGaeNE1EnNEPYWKY_) by Eddie Sharick and [Artificial Intelligence](https://copilot.microsoft.com/)
 
 ## Features
 - A fully interactive Chess Engine built from the ground up (no python-chess library)
