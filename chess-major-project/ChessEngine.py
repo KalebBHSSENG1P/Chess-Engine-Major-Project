@@ -150,9 +150,6 @@ class GameState:
             self._temp_cached_opp_moves = self.cached_opp_moves
             self._temp_cached_opp_turn = self.cached_opp_turn
 
-        # Ensure move object has correct piece references
-        move.pieceMoved = self.board[move.startRow, move.startCol]
-        move.pieceCaptured = self.board[move.endRow, move.endCol]
         # Update board: remove piece from start, place at end
         self.board[move.startRow, move.startCol] = None
         self.board[move.endRow, move.endCol] = move.pieceMoved
@@ -356,10 +353,6 @@ class GameState:
             # Determine mover color before applying the temp move
             mover_color = "w" if self.whiteToMove else "b"
             opponent_color = "b" if mover_color == "w" else "w"
-            # Ensure pieceMove and pieceCaptured does not return as None
-            move.pieceMoved = self.board[move.startRow, move.startCol]
-            move.pieceCaptured = self.board[move.endRow, move.endCol]
-            
             # Apply temp move on real board
             self.makeMove(move, is_temp=True)
 
