@@ -5,7 +5,7 @@ Currently prints:
 import time
 
 # Enable/disable all output for debugging. Off by default.
-DEBUG = False
+DEBUG = True
 
 # specialized print function that only outputs when DEBUG is True
 def debug_print(*args, **kwargs):

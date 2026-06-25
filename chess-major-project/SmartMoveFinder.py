@@ -445,9 +445,6 @@ class ChessAI:
                         quality -= 0.15
                     else:
                         quality += 0.01
-                # King: heavy penalty for moving (preserves castling rights)
-                elif move.pieceMoved.kind == "K":
-                    quality -= 10.0
                 # Rook: slight penalty for moving from corner (conserve for castling)
                 elif move.pieceMoved.kind == "R":
                     if move.startRow in (7, 0) and move.startCol in (0, 7):
@@ -483,6 +480,10 @@ class ChessAI:
                             quality += 0.05
                         else:
                             quality -= 0.10
+                # Bonus for moving toward center (except pawns) even when square is under attack, hopefully balancing out lost piece bonuses/penalties
+                center_distance = abs(move.endRow - 3.5) + abs(move.endCol - 3.5)
+                if move.pieceMoved.kind != "p":
+                    quality += max(0.0, 2.0 - center_distance) * 0.005
                 else:
                     pass # No development bonus if moving to attacked square
         finally:
