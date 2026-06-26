@@ -307,7 +307,7 @@ class ChessAI:
             # HARD PENALTY: discourage random king moves (except castling)
             if move.pieceMoved.kind == "K" and not move.isCastleMove:
                 # Big negative so king moves almost never win tiebreakers
-                quality -= 8.0
+                quality -= 20.0
 
             # Highest priority: captures (tactical moves that win material)
             if move.isCapture:
@@ -365,7 +365,7 @@ class ChessAI:
                                 attacked_our_pieces_after += 1
                 threats_removed = attacked_our_pieces_before - attacked_our_pieces_after
                 if threats_removed > 0:
-                    quality += threats_removed * 1.4
+                    quality += threats_removed * 0.5
             
             # Check blocking preference: prefer blocking check with non-king pieces over moving king
             king_still_in_check = gs.inCheck()
@@ -382,8 +382,7 @@ class ChessAI:
                 if not piece_still_under_attack:
                     if move.pieceMoved.kind != "K":
                         piece_value = cls.pieceScore.get(move.pieceMoved.kind, 0)
-                        # Queen: 10 -> +1.0, Rook: 5 -> +0.5, Bishop/Knight: 3-3.25 -> +0.3-0.32, Pawn: 1 -> +0.1
-                        quality += piece_value * 1.4
+                        quality += piece_value * 0.05
                     else:
                         quality += 0.5
             
@@ -407,16 +406,19 @@ class ChessAI:
                     
                 # Much heavier penalty for pieces captured by pawns (bad trades)
                 if pawn_can_capture:
-                    quality -= 3.0 + piece_value
+                    quality -= 20.0 + piece_value
                 else:
                     # Very heavy penalty for moving to any attacked square
-                    quality -= 2.0 + piece_value * 0.4
+                    quality -= 12.0 + piece_value * 0.8
             
             # Second priority: move pieces under attack to safety
             if not move.isCapture:
                 if gs.squareUnderAttack(move.startRow, move.startCol, attacker_color = opponent_color, use_cache = False):
                     # Higher bonus for moving queen to safety
-                    if move.pieceMoved.kind != "Q":
+                    if move.pieceMoved.kind == "Q":
+                        quality += 0.5
+                    # Noraml bonus for moving any other piece to safety
+                    elif move.pieceMoved.kind != "Q":
                         quality += 1.5
             
             # Special moves: promotion and castling
@@ -425,9 +427,57 @@ class ChessAI:
             if move.isCastleMove:
                 quality += 0.5
             
+            # HIGHLY DISCOURAGE moving pinned pieces
+            pinned_to_higher_value = False
+            start_r = move.startRow
+            start_c = move.startCol
+            piece = move.pieceMoved
+            color = piece.color
+            directions = [
+                (-1, 0), (1, 0), (0, -1), (0, 1),
+                (-1, -1), (-1, 1), (1, -1), (1, 1)
+            ]
+            for dr, dc in directions:
+                r = start_r + dr
+                c = start_c + dc
+                found_moved_piece = False
+                while 0 <= r < 8 and 0 <= c < 8:
+                    sq = gs.board[r, c]
+                    if sq is not None:
+                        if sq.color == color:
+                            # First friendly piece must be the moved piece
+                            if not found_moved_piece:
+                                if sq is piece:
+                                    found_moved_piece = True
+                                else:
+                                    break
+                            else:
+                                # Second friendly piece = higher-value piece behind it
+                                if cls.pieceScore[sq.kind] > cls.pieceScore[piece.kind]:
+                                    pinned_to_higher_value = True
+                                break
+                        else:
+                            # Enemy sliding attacker
+                            if sq.kind in ("R", "B", "Q"):
+                                if sq.kind == "R" and not (dr == 0 or dc == 0):
+                                    break
+                                if sq.kind == "B" and not (dr != 0 and dc != 0):
+                                    break
+                                # Only valid if attacker is BEFORE the moved piece
+                                if not found_moved_piece:
+                                    attacker_found = True
+                                else:
+                                    break
+                            break
+                    r += dr
+                    c += dc
+
+            if pinned_to_higher_value:
+                quality -= 10.0
+
             # Piece development: only evaluate if no tactical moves available
             # If square is not under attack, only then evaluate development bonuses/penalties
-            if quality == 0.0 and not dest_square_attacked:
+            if not dest_square_attacked:
                 # Knight development from starting position
                 if move.pieceMoved.kind == "N":
                     if move.startRow in (7, 0):
@@ -447,7 +497,7 @@ class ChessAI:
                 # Rook: slight penalty for moving from corner (conserve for castling)
                 elif move.pieceMoved.kind == "R":
                     if move.startRow in (7, 0) and move.startCol in (0, 7):
-                        quality -= 1.0
+                        quality -= 1.5
                 # Queen: penalty for early development
                 elif move.pieceMoved.kind == "Q":
                     quality -= 0.08
