@@ -259,10 +259,9 @@ class ChessAI:
         # print other debug information at the end of each move search
         debug_print(f"Nodes searched: {cls.node_count}, time taken: {time.perf_counter() - cls.start_time:.2f} seconds")
         prof_report()
-        if best_move_fallback is not None:
-            return best_move_fallback
-        else:
-            return valid_moves[0]  # fallback only if nothing was searched
+        # If the 10 second time limit hits, ensure it plays the best move it had evaluated previously
+        # Also acts as a fallback move if nothing was evaluated
+        return best_move_fallback if best_move_fallback is not None else valid_moves[0]
 
     @classmethod
     def _move_order_key(cls, move):
@@ -273,7 +272,7 @@ class ChessAI:
         victim_value = cls.pieceScore.get(move.pieceCaptured.kind, 0) if move.pieceCaptured is not None else 0
         attacker_value = cls.pieceScore.get(move.pieceMoved.kind, 0)
         promotion_bonus = 100 if move.isPawnPromotion else 0
-        capture_bonus = victim_value * 10 - attacker_value
+        capture_bonus = victim_value * 20 - attacker_value
         return capture_bonus + promotion_bonus
 
     @classmethod
@@ -308,7 +307,7 @@ class ChessAI:
             # HARD PENALTY: discourage random king moves (except castling)
             if move.pieceMoved.kind == "K" and not move.isCastleMove:
                 # Big negative so king moves almost never win tiebreakers
-                quality -= 20.0
+                quality -= 8.0
 
             # Highest priority: captures (tactical moves that win material)
             if move.isCapture:
@@ -339,7 +338,7 @@ class ChessAI:
                             quality += 3.2
                         elif move.pieceCaptured.kind == "p":
                             quality += 1.0
-                        quality += 0.5  # Bonus for winning trade
+                        quality += 2.0 # Bonus for winning trade
                     else:
                         # We're losing material or even trade: heavy penalty
                         material_loss = attacker_value - captured_value
@@ -366,7 +365,7 @@ class ChessAI:
                                 attacked_our_pieces_after += 1
                 threats_removed = attacked_our_pieces_before - attacked_our_pieces_after
                 if threats_removed > 0:
-                    quality += threats_removed * 0.8
+                    quality += threats_removed * 1.4
             
             # Check blocking preference: prefer blocking check with non-king pieces over moving king
             king_still_in_check = gs.inCheck()
@@ -384,9 +383,9 @@ class ChessAI:
                     if move.pieceMoved.kind != "K":
                         piece_value = cls.pieceScore.get(move.pieceMoved.kind, 0)
                         # Queen: 10 -> +1.0, Rook: 5 -> +0.5, Bishop/Knight: 3-3.25 -> +0.3-0.32, Pawn: 1 -> +0.1
-                        quality += piece_value * 0.15
+                        quality += piece_value * 0.7
                     else:
-                        quality += 0.1
+                        quality += 0.5
             
             # CRITICAL: Heavy penalty for moving piece to a square under attack
             # Extra severe penalty for pieces captured by pawns (bad trades)
@@ -483,7 +482,7 @@ class ChessAI:
                 # Bonus for moving toward center (except pawns) even when square is under attack, hopefully balancing out lost piece bonuses/penalties
                 center_distance = abs(move.endRow - 3.5) + abs(move.endCol - 3.5)
                 if move.pieceMoved.kind != "p":
-                    quality += max(0.0, 2.0 - center_distance) * 0.005
+                    quality += max(0.0, 2.0 - center_distance) * 0.01
                 else:
                     pass # No development bonus if moving to attacked square
         finally:
