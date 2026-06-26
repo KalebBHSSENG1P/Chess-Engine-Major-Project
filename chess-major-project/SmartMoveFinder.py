@@ -383,7 +383,7 @@ class ChessAI:
                     if move.pieceMoved.kind != "K":
                         piece_value = cls.pieceScore.get(move.pieceMoved.kind, 0)
                         # Queen: 10 -> +1.0, Rook: 5 -> +0.5, Bishop/Knight: 3-3.25 -> +0.3-0.32, Pawn: 1 -> +0.1
-                        quality += piece_value * 0.7
+                        quality += piece_value * 1.4
                     else:
                         quality += 0.5
             
