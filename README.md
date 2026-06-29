@@ -11,7 +11,7 @@ An authentic student attempt at creating a polished chess program and chess engi
 ### Requirements Definition
 - Python (version 3.x or higher) and PIP (version 25.x or higher)
 - Pygame (or Pygame-ce) and Pyvidplayer2 python libraries (should install automatically on startup from executable)
-- **FFmpeg and FFprobe programs must be downloaded and accessible via PATH**
+- **[FFmpeg and FFprobe](https://www.ffmpeg.org/) programs must be downloaded and accessible via PATH**
 
 ### Step-by-Step Installation
 1. Download the repository via the green `Code` button or clone the repository using `git clone`
