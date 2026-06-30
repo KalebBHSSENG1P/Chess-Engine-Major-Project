@@ -1,2 +1,4 @@
 pygame_ce==2.5.7
 pyvidplayer2==0.9.34
+numpy==2.5.0
+pytest==9.1.1
