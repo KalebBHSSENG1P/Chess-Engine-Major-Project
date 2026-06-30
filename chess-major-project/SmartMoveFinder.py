@@ -328,7 +328,7 @@ class ChessAI:
                 else:
                     # Defended piece capture: evaluate the trade
                     # Only apply bonuses if we're winning material in the exchange
-                    if captured_value > attacker_value:
+                    if captured_value >= attacker_value:
                         # We're winning material
                         if move.pieceCaptured.kind == "Q":
                             quality += 10.0
@@ -340,7 +340,7 @@ class ChessAI:
                             quality += 1.0
                         quality += 2.0 # Bonus for winning trade
                     else:
-                        # We're losing material or even trade: heavy penalty
+                        # We're losing material: heavy penalty
                         material_loss = attacker_value - captured_value
                         quality -= 10.0 + material_loss * 0.3
                 
