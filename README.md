@@ -18,7 +18,7 @@ An authentic student attempt at creating a polished chess program and chess engi
 2. Install FFmpeg program (includes FFprobe) via the [official website](https://www.ffmpeg.org/).
 3. **Add the FFmpeg bin folder location to the PATH environment variable (there's plenty of tutorials online for this).**
 4. Navigate to the download or cloned repository and extract it
-5. Run the program via the `ChessMain.py` file in IDE
+5. Run the program via the `ChessMain.py` file in IDE or from the `ChessMain.exe` file located in `dist` directory (This directory is not included in this GitHub repository, download the ZIP from Google Classroom Submission)
 
 ## Screenshots
 ![Main Menu](chess-major-project/images/menu_background.png)
