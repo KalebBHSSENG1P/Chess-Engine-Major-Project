@@ -20,6 +20,9 @@ An authentic student attempt at creating a polished chess program and chess engi
 4. Navigate to the download or cloned repository and extract it
 5. Run the program via the `ChessMain.py` file in IDE
 
+## Screenshots
+![Main Menu](chess-major-project/images/menu_background.png)
+
 ## Technologies Used
 - Python 🐍
 - Pygame 🎮
